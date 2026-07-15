@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EVENT HORIZON</title>
+<style>
+  :root{ --gold:#C9A227; --hot:#ffd9a0; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#000; }
+  body{ font-family:"Share Tech Mono", ui-monospace, "Courier New", monospace; color:#eee; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  #app{ position:fixed; inset:0; }
+  canvas{ display:block; }
+
+  .overlay{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; z-index:10; padding:24px; }
+  .hidden{ display:none !important; }
+
+  /* Splash */
+  #splash{ background:radial-gradient(ellipse at center, rgba(20,10,30,0.55) 0%, rgba(0,0,0,0.9) 70%); }
+  .logo{ font-family:"Anton","Arial Black",sans-serif; font-weight:900; letter-spacing:2px; line-height:0.92;
+         font-size:clamp(44px, 12vw, 132px); text-transform:uppercase;
+         background:linear-gradient(180deg,#fff 0%, var(--hot) 45%, var(--gold) 100%);
+         -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+         filter:drop-shadow(0 0 22px rgba(201,162,39,0.45)); }
+  .logo .l2{ display:block; }
+  .tagline{ margin-top:14px; font-size:clamp(13px,3.4vw,20px); letter-spacing:6px; color:var(--gold); text-transform:uppercase; }
+  .startline{ margin-top:40px; font-size:clamp(14px,3.6vw,20px); letter-spacing:3px; color:#fff; animation:blink 1.15s steps(1) infinite; }
+  .hint{ margin-top:26px; font-size:clamp(11px,2.8vw,14px); color:#8a8a9a; line-height:1.9; letter-spacing:1px; }
+  @keyframes blink{ 50%{ opacity:0.15; } }
+
+  /* HUD */
+  #hud{ position:fixed; top:0; left:0; right:0; z-index:8; display:flex; justify-content:space-between; align-items:flex-start; padding:14px 18px; pointer-events:none; }
+  #hud .block{ font-size:clamp(12px,3vw,16px); letter-spacing:2px; text-shadow:0 0 8px rgba(0,0,0,0.9); }
+  #hud .label{ color:var(--gold); font-size:0.7em; letter-spacing:3px; display:block; }
+  #hud .val{ color:#fff; font-size:1.5em; }
+  #lives{ display:flex; gap:7px; margin-top:3px; }
+  .life{ width:16px; height:16px; }
+  #right{ text-align:right; }
+
+  /* warning vignette */
+  #vignette{ position:fixed; inset:0; z-index:7; pointer-events:none; opacity:0;
+             box-shadow:inset 0 0 140px 40px rgba(255,40,40,0.75); transition:opacity 0.08s linear; }
+
+  /* Game over */
+  #gameover{ background:rgba(0,0,0,0.82); }
+  #gameover h2{ font-family:"Anton","Arial Black",sans-serif; font-size:clamp(38px,10vw,90px); letter-spacing:3px;
+                color:#ff5252; text-transform:uppercase; filter:drop-shadow(0 0 16px rgba(255,60,60,0.5)); }
+  .goscore{ margin-top:22px; font-size:clamp(16px,4vw,24px); letter-spacing:2px; }
+  .goscore b{ color:var(--gold); font-size:1.4em; }
+  .gobest{ margin-top:8px; color:#9a9aa8; letter-spacing:2px; }
+  .again{ margin-top:34px; font-size:clamp(14px,3.6vw,20px); letter-spacing:3px; color:#fff; animation:blink 1.15s steps(1) infinite; }
+
+  /* orientation nag */
+  #rotate{ background:#000; z-index:20; }
+  #rotate .ico{ font-size:60px; animation:spin 2.4s ease-in-out infinite; }
+  @keyframes spin{ 0%,100%{ transform:rotate(0deg);} 50%{ transform:rotate(90deg);} }
+
+  /* mute button */
+  #mute{ position:fixed; bottom:14px; right:16px; z-index:9; width:44px; height:44px; border-radius:50%;
+         border:1px solid rgba(201,162,39,0.5); background:rgba(0,0,0,0.45); color:var(--gold);
+         font-size:19px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  #banner{ position:fixed; bottom:16px; left:0; right:0; z-index:8; text-align:center; font-size:11px; letter-spacing:2px; color:#6a6a78; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud" class="hidden">
+  <div class="block"><span class="label">TIME</span><span class="val" id="timeVal">0.0</span></div>
+  <div id="right" class="block">
+    <span class="label">SCORE</span><span class="val" id="scoreVal">0</span>
+    <div id="lives"></div>
+  </div>
+</div>
+<div id="vignette"></div>
+
+<div id="splash" class="overlay">
+  <div class="logo"><span class="l1">EVENT</span><span class="l2">HORIZON</span></div>
+  <div class="tagline">Tilt to survive</div>
+  <div class="startline" id="startLine">▶ PRESS ANY KEY / TAP TO START</div>
+  <div class="hint" id="startHint"></div>
+</div>
+
+<div id="gameover" class="overlay hidden">
+  <h2>Consumed</h2>
+  <div class="goscore">SCORE <b id="goScore">0</b></div>
+  <div class="gobest">BEST <span id="goBest">0</span></div>
+  <div class="again">▶ PRESS ANY KEY / TAP TO RETRY</div>
+</div>
+
+<div id="rotate" class="overlay hidden">
+  <div class="ico">▭</div>
+  <div style="margin-top:20px; letter-spacing:3px;">ROTATE TO LANDSCAPE</div>
+</div>
+
+<div id="mute" class="hidden">🔇</div>
+<div id="banner" class="hidden">prototype build · v0.1</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   EVENT HORIZON — three.js prototype
+   Single-file. Gyroscope tilt + keyboard/touch fallback.
+   Change TITLE / difficulty in CONFIG below.
+   ============================================================ */
+
+var CONFIG = {
+  horizonRadius: 3.6,     // event horizon (death radius), grows over time
+  horizonGrow:   0.05,    // world units added per second
+  diskInner:     4.2,
+  diskOuter:     17.0,
+  arenaR:        27.0,    // soft outer boundary
+  shipRadius:    1.0,
+  gravBase:      120.0,   // base inward pull strength
+  gravRamp:      0.11,    // pull multiplier growth per second (difficulty)
+  gravMinR:      4.0,     // clamp so pull near centre stays finite
+  thrust:        62.0,    // player acceleration
+  damping:       0.992,   // velocity retention per frame(60fps ref)
+  lives:         3,
+  invuln:        1.6,     // seconds of blink after respawn
+  warnRadius:    7.5      // start red warning inside this radius
+};
+
+// ---------- state ----------
+var STATE = { BOOT:0, SPLASH:1, PLAY:2, OVER:3 };
+var state = STATE.BOOT;
+var renderer, scene, camera, clock;
+var blackhole, photonRing, disk, glow, ship, shipTrail, stars, explosion;
+var W = window.innerWidth, H = window.innerHeight;
+
+var game = {
+  time:0, score:0, best:0, lives:CONFIG.lives,
+  posX:0, posZ:0, velX:0, velZ:0,
+  gravMul:1, horizon:CONFIG.horizonRadius,
+  invulnT:0, heading:0
+};
+
+// ---------- input ----------
+var keys = {};
+var gyro = { enabled:false, has:false, neutralBeta:null, x:0, z:0 };
+var pointer = { active:false, x:0, z:0 };
+
+// ---------- audio ----------
+var audio = { ctx:null, muted:true, master:null, music:null, thrustOsc:null, thrustGain:null };
+var MUSIC_FILE = "music.ogg"; // drop a Suno-generated track next to this file
+
+// ============================================================
+//  INIT
+// ============================================================
+function init(){
+  renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:"high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setSize(W,H);
+  document.getElementById("app").appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x05040a, 0.012);
+
+  camera = new THREE.PerspectiveCamera(55, W/H, 0.1, 2000);
+  camera.position.set(0, 34, 27);
+  camera.lookAt(0,0,0);
+
+  scene.add(new THREE.AmbientLight(0x334455, 0.7));
+  var key = new THREE.PointLight(0xffbb66, 1.2, 200); key.position.set(0,40,20); scene.add(key);
+
+  buildStars();
+  buildBlackHole();
+  buildShip();
+  buildExplosion();
+
+  clock = new THREE.Clock();
+  bindEvents();
+  buildLivesUI();
+  loadBest();
+
+  // show controls hint depending on device
+  var touch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  document.getElementById("startHint").innerHTML = touch
+    ? "Tilt the phone to steer · hold a finger to nudge<br>Play in landscape · headphones recommended"
+    : "Arrow keys / WASD to steer · M to mute<br>(gyroscope works on a phone via the live link)";
+
+  state = STATE.SPLASH;
+  document.getElementById("banner").classList.remove("hidden");
+  document.getElementById("mute").classList.remove("hidden");
+  checkOrientation();
+  animate();
+}
+
+// ============================================================
+//  BUILD — visuals
+// ============================================================
+function buildStars(){
+  var g = new THREE.BufferGeometry();
+  var n = 1600, arr = new Float32Array(n*3);
+  for(var i=0;i<n;i++){
+    var r = 200 + Math.random()*600;
+    var t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1);
+    arr[i*3]   = r*Math.sin(p)*Math.cos(t);
+    arr[i*3+1] = r*Math.cos(p)*0.5 - 40;
+    arr[i*3+2] = r*Math.sin(p)*Math.sin(t);
+  }
+  g.setAttribute("position", new THREE.BufferAttribute(arr,3));
+  var m = new THREE.PointsMaterial({ color:0xafc4ff, size:1.4, sizeAttenuation:true, transparent:true, opacity:0.85 });
+  stars = new THREE.Points(g,m); scene.add(stars);
+}
+
+function buildBlackHole(){
+  // event horizon sphere (pure black)
+  blackhole = new THREE.Mesh(
+    new THREE.SphereGeometry(CONFIG.horizonRadius, 48, 48),
+    new THREE.MeshBasicMaterial({ color:0x000000 })
+  );
+  scene.add(blackhole);
+
+  // photon ring — thin bright ring hugging the horizon
+  photonRing = new THREE.Mesh(
+    new THREE.TorusGeometry(CONFIG.horizonRadius*1.06, 0.14, 16, 90),
+    new THREE.MeshBasicMaterial({ color:0xfff0d0, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending })
+  );
+  photonRing.rotation.x = Math.PI/2;
+  scene.add(photonRing);
+
+  // soft glow behind the hole
+  glow = new THREE.Mesh(
+    new THREE.CircleGeometry(CONFIG.horizonRadius*2.4, 48),
+    new THREE.MeshBasicMaterial({ color:0x66330f, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending })
+  );
+  glow.rotation.x = -Math.PI/2; glow.position.y = -0.05;
+  scene.add(glow);
+
+  // accretion disk — custom swirl shader on a flat plane in the XZ plane
+  var size = CONFIG.diskOuter*2;
+  var geo = new THREE.PlaneGeometry(size, size, 1, 1);
+  var mat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+    uniforms:{
+      uTime:{value:0}, uPlane:{value:size},
+      uInner:{value:CONFIG.diskInner}, uOuter:{value:CONFIG.diskOuter}, uSpin:{value:1.0}
+    },
+    vertexShader:[
+      "varying vec2 vUv;",
+      "void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }"
+    ].join("\n"),
+    fragmentShader:[
+      "precision highp float;",
+      "varying vec2 vUv;",
+      "uniform float uTime,uPlane,uInner,uOuter,uSpin;",
+      "void main(){",
+      "  vec2 p=(vUv-0.5)*uPlane;",
+      "  float r=length(p);",
+      "  if(r<uInner || r>uOuter){ discard; }",
+      "  float a=atan(p.y,p.x);",
+      "  float t=(r-uInner)/(uOuter-uInner);",       // 0 inner .. 1 outer
+      "  float swirl=sin(a*3.0 + uTime*uSpin*2.2 - r*0.9);",
+      "  float arms=0.55+0.45*swirl;",
+      "  float fall=pow(1.0-t,1.7);",                // brighter inside
+      "  float edge=smoothstep(0.0,0.12,t)*smoothstep(1.0,0.82,t);",
+      "  float bright=fall*edge*(0.5+0.6*arms);",
+      "  vec3 hot=vec3(1.0,0.95,0.85);",
+      "  vec3 mid=vec3(1.0,0.55,0.15);",
+      "  vec3 cold=vec3(0.55,0.15,0.45);",
+      "  vec3 col=mix(hot,mid,smoothstep(0.0,0.4,t));",
+      "  col=mix(col,cold,smoothstep(0.45,1.0,t));",
+      "  gl_FragColor=vec4(col*bright*1.6, bright);",
+      "}"
+    ].join("\n")
+  });
+  disk = new THREE.Mesh(geo, mat);
+  disk.rotation.x = -Math.PI/2; // lay flat in XZ
+  scene.add(disk);
+}
+
+function buildShip(){
+  ship = new THREE.Group();
+  var body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.85, 2.4, 10),
+    new THREE.MeshStandardMaterial({ color:0xdfe8ff, emissive:0x2a3a66, metalness:0.6, roughness:0.35 })
+  );
+  body.rotation.x = Math.PI/2; // nose along +Z
+  ship.add(body);
+  // thruster glow
+  var th = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 12, 12),
+    new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending })
+  );
+  th.position.z = -1.5; ship.name="ship"; ship.userData.thruster = th; ship.add(th);
+  var light = new THREE.PointLight(0x66ccff, 0.8, 18); light.position.z=-1.5; ship.add(light);
+  ship.position.y = 0.5;
+  scene.add(ship);
+
+  // simple trail
+  var tg = new THREE.BufferGeometry();
+  var TN = 26; tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(TN*3),3));
+  shipTrail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending }));
+  shipTrail.userData = { n:TN, pts:[] };
+  scene.add(shipTrail);
+}
+
+function buildExplosion(){
+  var n=90, g=new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n*3),3));
+  explosion = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffaa55, size:0.9, transparent:true, opacity:0, blending:THREE.AdditiveBlending }));
+  explosion.userData = { n:n, vel:new Float32Array(n*3), t:0, active:false };
+  scene.add(explosion);
+}
+
+// ============================================================
+//  GAME FLOW
+// ============================================================
+function startGame(){
+  game.time=0; game.score=0; game.lives=CONFIG.lives;
+  game.gravMul=1; game.horizon=CONFIG.horizonRadius;
+  resetShip(true);
+  buildLivesUI();
+  document.getElementById("hud").classList.remove("hidden");
+  document.getElementById("splash").classList.add("hidden");
+  document.getElementById("gameover").classList.add("hidden");
+  state = STATE.PLAY;
+  startMusic();
+}
+
+function resetShip(full){
+  // spawn near the arena edge with a tangential kick -> begins orbiting
+  var ang = Math.random()*Math.PI*2;
+  var r = CONFIG.arenaR*0.82;
+  game.posX = Math.cos(ang)*r; game.posZ = Math.sin(ang)*r;
+  var tang = ang + Math.PI/2;
+  var speed = 10;
+  game.velX = Math.cos(tang)*speed; game.velZ = Math.sin(tang)*speed;
+  game.invulnT = CONFIG.invuln;
+  if(shipTrail) shipTrail.userData.pts = [];
+}
+
+function loseLife(){
+  game.lives--;
+  triggerExplosion();
+  sfxDeath();
+  flashVignette();
+  buildLivesUI();
+  if(game.lives<=0){ gameOver(); }
+  else { resetShip(false); }
+}
+
+function gameOver(){
+  state = STATE.OVER;
+  game.best = Math.max(game.best, game.score);
+  saveBest();
+  document.getElementById("goScore").textContent = game.score;
+  document.getElementById("goBest").textContent = game.best;
+  document.getElementById("gameover").classList.remove("hidden");
+  document.getElementById("hud").classList.add("hidden");
+  stopMusic(); sfxGameOver();
+}
+
+// ============================================================
+//  UPDATE
+// ============================================================
+function update(dt){
+  if(state!==STATE.PLAY){ return; }
+  dt = Math.min(dt, 0.05); // clamp big frame gaps
+
+  game.time += dt;
+  game.score = Math.floor(game.time*10);
+  game.gravMul = 1 + game.time*CONFIG.gravRamp;
+  game.horizon = CONFIG.horizonRadius + game.time*CONFIG.horizonGrow;
+
+  // ---- input vector ----
+  var ix=0, iz=0;
+  if(gyro.enabled && gyro.has){ ix=gyro.x; iz=gyro.z; }
+  else {
+    if(keys["ArrowLeft"]||keys["a"]) ix-=1;
+    if(keys["ArrowRight"]||keys["d"]) ix+=1;
+    if(keys["ArrowUp"]||keys["w"]) iz-=1;
+    if(keys["ArrowDown"]||keys["s"]) iz+=1;
+    if(pointer.active){ ix+=pointer.x; iz+=pointer.z; }
+  }
+  var il = Math.hypot(ix,iz); if(il>1){ ix/=il; iz/=il; }
+
+  // ---- gravity (inward) ----
+  var r = Math.hypot(game.posX, game.posZ) || 0.0001;
+  var rc = Math.max(r, CONFIG.gravMinR);
+  var g = (CONFIG.gravBase*game.gravMul)/(rc*rc);
+  var gx = -(game.posX/r)*g, gz = -(game.posZ/r)*g;
+
+  // ---- thrust ----
+  var tx = ix*CONFIG.thrust, tz = iz*CONFIG.thrust;
+
+  // integrate
+  game.velX += (gx+tx)*dt; game.velZ += (gz+tz)*dt;
+  var damp = Math.pow(CONFIG.damping, dt*60);
+  game.velX *= damp; game.velZ *= damp;
+  game.posX += game.velX*dt; game.posZ += game.velZ*dt;
+
+  // soft arena boundary — push back gently
+  var nr = Math.hypot(game.posX, game.posZ);
+  if(nr > CONFIG.arenaR){
+    var k=(nr-CONFIG.arenaR);
+    game.velX -= (game.posX/nr)*k*6*dt;
+    game.velZ -= (game.posZ/nr)*k*6*dt;
+  }
+
+  // thrust sound intensity
+  setThrust(il>0.05);
+
+  // ---- collision with horizon ----
+  if(game.invulnT>0){ game.invulnT-=dt; }
+  else if(nr < game.horizon + CONFIG.shipRadius){ loseLife(); }
+
+  // ---- warning feedback ----
+  var warn = 0;
+  if(nr < CONFIG.warnRadius){ warn = 1-((nr-game.horizon)/(CONFIG.warnRadius-game.horizon)); warn=Math.max(0,Math.min(1,warn)); }
+  document.getElementById("vignette").style.opacity = (warn*0.9).toFixed(2);
+  if(warn>0.35){ sfxWarnMaybe(); }
+
+  // ---- reflect into 3D ----
+  ship.position.x = game.posX; ship.position.z = game.posZ;
+  if(Math.hypot(game.velX,game.velZ)>0.4){ game.heading = Math.atan2(game.velX, game.velZ); }
+  ship.rotation.y = game.heading;
+  // blink during invulnerability
+  ship.visible = !(game.invulnT>0 && (Math.floor(game.time*12)%2===0));
+  var th = ship.userData.thruster; if(th){ th.material.opacity = il>0.05 ? 0.95 : 0.35; }
+  updateTrail();
+
+  // grow the hole visuals with difficulty
+  var hs = game.horizon/CONFIG.horizonRadius;
+  blackhole.scale.setScalar(hs); photonRing.scale.setScalar(hs); glow.scale.setScalar(hs);
+
+  // HUD
+  document.getElementById("timeVal").textContent = game.time.toFixed(1);
+  document.getElementById("scoreVal").textContent = game.score;
+}
+
+function updateTrail(){
+  var u = shipTrail.userData; u.pts.unshift([game.posX, 0.4, game.posZ]);
+  if(u.pts.length>u.n) u.pts.pop();
+  var pos = shipTrail.geometry.attributes.position.array;
+  for(var i=0;i<u.n;i++){
+    var p = u.pts[i] || u.pts[u.pts.length-1] || [game.posX,0.4,game.posZ];
+    pos[i*3]=p[0]; pos[i*3+1]=p[1]; pos[i*3+2]=p[2];
+  }
+  shipTrail.geometry.attributes.position.needsUpdate = true;
+}
+
+// ---------- explosion ----------
+function triggerExplosion(){
+  var u=explosion.userData; u.active=true; u.t=0;
+  var pos=explosion.geometry.attributes.position.array;
+  for(var i=0;i<u.n;i++){
+    pos[i*3]=game.posX; pos[i*3+1]=0.5; pos[i*3+2]=game.posZ;
+    var a=Math.random()*Math.PI*2, b=Math.random()*Math.PI, s=6+Math.random()*14;
+    u.vel[i*3]=Math.cos(a)*Math.sin(b)*s; u.vel[i*3+1]=Math.cos(b)*s; u.vel[i*3+2]=Math.sin(a)*Math.sin(b)*s;
+  }
+  explosion.material.opacity=1; explosion.geometry.attributes.position.needsUpdate=true;
+}
+function updateExplosion(dt){
+  var u=explosion.userData; if(!u.active) return;
+  u.t+=dt; var pos=explosion.geometry.attributes.position.array;
+  for(var i=0;i<u.n;i++){ pos[i*3]+=u.vel[i*3]*dt; pos[i*3+1]+=u.vel[i*3+1]*dt; pos[i*3+2]+=u.vel[i*3+2]*dt; }
+  explosion.geometry.attributes.position.needsUpdate=true;
+  explosion.material.opacity=Math.max(0, 1-u.t/0.9);
+  if(u.t>0.9) u.active=false;
+}
+
+// ============================================================
+//  RENDER LOOP
+// ============================================================
+function animate(){
+  requestAnimationFrame(animate);
+  var dt = clock.getDelta();
+  var t = clock.elapsedTime;
+
+  if(disk) disk.material.uniforms.uTime.value = t;
+  if(photonRing) photonRing.rotation.z = t*0.4;
+  if(stars) stars.rotation.y = t*0.005;
+
+  update(dt);
+  updateExplosion(dt);
+
+  // gentle idle camera breathe
+  camera.position.x = Math.sin(t*0.15)*1.2;
+  camera.lookAt(0,0,0);
+
+  renderer.render(scene,camera);
+}
+
+// ============================================================
+//  INPUT / EVENTS
+// ============================================================
+function bindEvents(){
+  window.addEventListener("resize", onResize);
+  window.addEventListener("keydown", function(e){
+    keys[e.key]=true;
+    if(e.key===" "||e.key==="Spacebar") e.preventDefault();
+    if(e.key==="m"||e.key==="M"){ toggleMute(); return; }
+    handleAdvance();
+  });
+  window.addEventListener("keyup", function(e){ keys[e.key]=false; });
+
+  var el = renderer.domElement;
+  el.addEventListener("pointerdown", function(e){ pointer.active=true; setPointer(e); if(state!==STATE.PLAY) handleAdvance(); });
+  el.addEventListener("pointermove", function(e){ if(pointer.active) setPointer(e); });
+  window.addEventListener("pointerup", function(){ pointer.active=false; pointer.x=0; pointer.z=0; });
+
+  document.getElementById("mute").addEventListener("click", function(e){ e.stopPropagation(); toggleMute(); });
+  window.addEventListener("orientationchange", checkOrientation);
+  window.addEventListener("deviceorientation", onGyro);
+}
+
+function setPointer(e){
+  // vector from screen centre to touch -> desired thrust direction (screen y -> world z)
+  var nx=(e.clientX/W)*2-1, ny=(e.clientY/H)*2-1;
+  var l=Math.hypot(nx,ny); if(l>1){ nx/=l; ny/=l; }
+  pointer.x=nx; pointer.z=ny;
+}
+
+function handleAdvance(){
+  if(state===STATE.SPLASH){ ensureAudio(); requestGyro(); startGame(); }
+  else if(state===STATE.OVER){ startGame(); }
+}
+
+function onGyro(e){
+  if(e.gamma===null || e.beta===null) return;
+  gyro.has=true;
+  if(gyro.neutralBeta===null) gyro.neutralBeta = e.beta; // calibrate to how it's held
+  var gx = e.gamma/35;                       // left-right tilt
+  var gz = (e.beta - gyro.neutralBeta)/35;   // front-back tilt
+  gyro.x = Math.max(-1,Math.min(1,gx));
+  gyro.z = Math.max(-1,Math.min(1,gz));
+}
+
+function requestGyro(){
+  try{
+    if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
+      DeviceOrientationEvent.requestPermission().then(function(res){
+        if(res==="granted"){ gyro.enabled=true; gyro.neutralBeta=null; }
+      }).catch(function(){});
+    } else if('ontouchstart' in window || navigator.maxTouchPoints>0){
+      gyro.enabled=true; gyro.neutralBeta=null; // Android / non-iOS
+    }
+  }catch(err){}
+}
+
+function onResize(){
+  W=window.innerWidth; H=window.innerHeight;
+  renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix();
+  checkOrientation();
+}
+
+function checkOrientation(){
+  var touch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  var portrait = H>W;
+  document.getElementById("rotate").classList.toggle("hidden", !(touch && portrait));
+}
+
+// ============================================================
+//  HUD helpers
+// ============================================================
+function buildLivesUI(){
+  var wrap=document.getElementById("lives"); wrap.innerHTML="";
+  for(var i=0;i<CONFIG.lives;i++){
+    var d=document.createElement("div"); d.className="life";
+    d.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2 L20 22 L12 17 L4 22 Z" fill="'+(i<game.lives?"#C9A227":"#333")+'"/></svg>';
+    wrap.appendChild(d);
+  }
+}
+function flashVignette(){
+  var v=document.getElementById("vignette"); v.style.opacity="1";
+  setTimeout(function(){ v.style.opacity="0"; },140);
+}
+function loadBest(){ try{ game.best=parseInt(localStorage.getItem("eh_best")||"0",10)||0; }catch(e){} }
+function saveBest(){ try{ localStorage.setItem("eh_best", String(game.best)); }catch(e){} }
+
+// ============================================================
+//  AUDIO (Web Audio synth SFX + optional Suno music track)
+// ============================================================
+function ensureAudio(){
+  if(audio.ctx) { if(audio.ctx.state==="suspended") audio.ctx.resume(); return; }
+  try{
+    var AC = window.AudioContext||window.webkitAudioContext;
+    audio.ctx = new AC();
+    audio.master = audio.ctx.createGain();
+    audio.master.gain.value = audio.muted?0:0.9;
+    audio.master.connect(audio.ctx.destination);
+    setupThrust();
+    // optional background music (Suno). Silent if file missing.
+    var el = new Audio(); el.loop=true; el.src=MUSIC_FILE; el.volume=0.55;
+    el.addEventListener("error", function(){ audio.music=null; });
+    audio.music = el;
+  }catch(e){ audio.ctx=null; }
+}
+function toggleMute(){
+  audio.muted=!audio.muted;
+  document.getElementById("mute").textContent = audio.muted?"🔇":"🔊";
+  if(audio.ctx){ audio.master.gain.value = audio.muted?0:0.9; }
+  if(audio.music){ if(audio.muted) audio.music.pause(); else if(state===STATE.PLAY) audio.music.play().catch(function(){}); }
+}
+function startMusic(){ if(audio.music && !audio.muted){ audio.music.currentTime=0; audio.music.play().catch(function(){}); } }
+function stopMusic(){ if(audio.music){ audio.music.pause(); } }
+
+function setupThrust(){
+  if(!audio.ctx) return;
+  audio.thrustGain = audio.ctx.createGain(); audio.thrustGain.gain.value=0;
+  var o=audio.ctx.createOscillator(); o.type="sawtooth"; o.frequency.value=70;
+  var f=audio.ctx.createBiquadFilter(); f.type="lowpass"; f.frequency.value=340;
+  o.connect(f); f.connect(audio.thrustGain); audio.thrustGain.connect(audio.master); o.start();
+  audio.thrustOsc=o;
+}
+function setThrust(on){
+  if(!audio.ctx||!audio.thrustGain) return;
+  var target = on?0.12:0.0;
+  audio.thrustGain.gain.setTargetAtTime(target, audio.ctx.currentTime, 0.08);
+}
+var lastWarn=0;
+function sfxWarnMaybe(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime; if(now-lastWarn<0.55) return; lastWarn=now;
+  beep(880, 0.09, "square", 0.14);
+}
+function sfxDeath(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+  o.type="sawtooth"; o.frequency.setValueAtTime(320,now); o.frequency.exponentialRampToValueAtTime(40,now+0.7);
+  g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.75);
+  o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+0.8);
+}
+function sfxGameOver(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  [220,165,110].forEach(function(fr,i){
+    var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+    o.type="triangle"; o.frequency.value=fr;
+    var st=now+i*0.16;
+    g.gain.setValueAtTime(0.0001,st); g.gain.linearRampToValueAtTime(0.3,st+0.03); g.gain.exponentialRampToValueAtTime(0.001,st+0.4);
+    o.connect(g); g.connect(audio.master); o.start(st); o.stop(st+0.45);
+  });
+}
+function beep(fr,dur,type,vol){
+  var now=audio.ctx.currentTime;
+  var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+  o.type=type||"sine"; o.frequency.value=fr;
+  g.gain.setValueAtTime(vol||0.2,now); g.gain.exponentialRampToValueAtTime(0.001,now+dur);
+  o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+dur+0.02);
+}
+
+// ---------- go ----------
+window.addEventListener("load", init);
+</script>
+</body>
+</html>
