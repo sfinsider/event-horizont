@@ -251,10 +251,10 @@ function buildBlackHole(){
       "  float r=length(p);",
       "  if(r<uInner || r>uOuter){ discard; }",
       "  float a=atan(p.y,p.x);",
-      "  float t=(r-uInner)/(uOuter-uInner);",       // 0 inner .. 1 outer
+      "  float t=(r-uInner)/(uOuter-uInner);",
       "  float swirl=sin(a*3.0 + uTime*uSpin*2.2 - r*0.9);",
       "  float arms=0.55+0.45*swirl;",
-      "  float fall=pow(1.0-t,1.7);",                // brighter inside
+      "  float fall=pow(1.0-t,1.7);",
       "  float edge=smoothstep(0.0,0.12,t)*smoothstep(1.0,0.82,t);",
       "  float bright=fall*edge*(0.5+0.6*arms);",
       "  vec3 hot=vec3(1.0,0.95,0.85);",
@@ -497,10 +497,16 @@ function bindEvents(){
   });
   window.addEventListener("keyup", function(e){ keys[e.key]=false; });
 
-  var el = renderer.domElement;
-  el.addEventListener("pointerdown", function(e){ pointer.active=true; setPointer(e); if(state!==STATE.PLAY) handleAdvance(); });
-  el.addEventListener("pointermove", function(e){ if(pointer.active) setPointer(e); });
+  // Listen on window so taps on the splash / game-over overlays also register (mobile).
+  window.addEventListener("pointerdown", function(e){
+    if(e.target && e.target.closest && e.target.closest("#mute")) return; // let mute button do its thing
+    pointer.active=true; setPointer(e);
+    if(state!==STATE.PLAY) handleAdvance();
+  });
+  window.addEventListener("pointermove", function(e){ if(pointer.active) setPointer(e); });
   window.addEventListener("pointerup", function(){ pointer.active=false; pointer.x=0; pointer.z=0; });
+  // extra safety net for older mobile browsers
+  window.addEventListener("touchstart", function(){ if(state!==STATE.PLAY) handleAdvance(); }, {passive:true});
 
   document.getElementById("mute").addEventListener("click", function(e){ e.stopPropagation(); toggleMute(); });
   window.addEventListener("orientationchange", checkOrientation);
