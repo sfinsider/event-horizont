@@ -33,9 +33,10 @@
   #hud .block{ font-size:clamp(12px,3vw,16px); letter-spacing:2px; text-shadow:0 0 8px rgba(0,0,0,0.9); }
   #hud .label{ color:var(--gold); font-size:0.7em; letter-spacing:3px; display:block; }
   #hud .val{ color:#fff; font-size:1.5em; }
-  #lives{ display:flex; gap:7px; margin-top:3px; }
-  .life{ width:16px; height:16px; }
   #right{ text-align:right; }
+  #right .mult{ display:block; font-size:1.15em; letter-spacing:2px; color:#6a6a78; margin-top:2px; transition:color 0.15s; }
+  #lives{ display:flex; gap:7px; margin-top:5px; justify-content:flex-end; }
+  .life{ width:16px; height:16px; }
 
   /* warning vignette */
   #vignette{ position:fixed; inset:0; z-index:7; pointer-events:none; opacity:0;
@@ -69,6 +70,7 @@
   <div class="block"><span class="label">TIME</span><span class="val" id="timeVal">0.0</span></div>
   <div id="right" class="block">
     <span class="label">SCORE</span><span class="val" id="scoreVal">0</span>
+    <span class="mult" id="multVal">×1.0</span>
     <div id="lives"></div>
   </div>
 </div>
@@ -94,45 +96,52 @@
 </div>
 
 <div id="mute" class="hidden">🔇</div>
-<div id="banner" class="hidden">prototype build · v0.1</div>
+<div id="banner" class="hidden">prototype build · v0.2</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype
-   Single-file. Gyroscope tilt + keyboard/touch fallback.
-   Change TITLE / difficulty in CONFIG below.
+   EVENT HORIZON — three.js prototype (v0.2)
+   Difficulty = risk/reward proximity scoring + shrinking safe
+   zone (growing horizon + closing wall) + 1/r gravity.
+   Tune everything in CONFIG below.
    ============================================================ */
 
 var CONFIG = {
-  horizonRadius: 3.6,     // event horizon (death radius), grows over time
-  horizonGrow:   0.05,    // world units added per second
+  horizonRadius: 3.6,     // event horizon (death radius) at start
+  horizonGrow:   0.09,    // world units the horizon grows per second
   diskInner:     4.2,
   diskOuter:     17.0,
-  arenaR:        27.0,    // soft outer boundary
+  arenaR:        27.0,    // starting outer wall (safe boundary)
+  arenaShrink:   0.16,    // units/sec the wall closes in
+  arenaMin:      12.5,    // wall floor
   shipRadius:    1.0,
-  gravBase:      120.0,   // base inward pull strength
-  gravRamp:      0.11,    // pull multiplier growth per second (difficulty)
-  gravMinR:      4.0,     // clamp so pull near centre stays finite
+  gravBase:      150.0,   // pull strength (1/r model — reaches the edge)
+  gravRamp:      0.06,    // pull multiplier growth per second
+  gravMinR:      3.2,     // clamp so pull near centre stays finite
   thrust:        62.0,    // player acceleration
-  damping:       0.992,   // velocity retention per frame(60fps ref)
+  damping:       0.992,   // velocity retention per frame (60fps ref)
   lives:         3,
   invuln:        1.6,     // seconds of blink after respawn
-  warnRadius:    7.5      // start red warning inside this radius
+  warnRadius:    8.0,     // red warning starts inside this band above horizon
+  // ---- risk / reward scoring ----
+  scoreBase:     10,      // points per second at a safe distance
+  bonusZone:     8.0,     // within this many units above the horizon, bonus ramps
+  bonusMax:      7.0      // hugging the horizon => up to 1 + bonusMax multiplier
 };
 
 // ---------- state ----------
 var STATE = { BOOT:0, SPLASH:1, PLAY:2, OVER:3 };
 var state = STATE.BOOT;
 var renderer, scene, camera, clock;
-var blackhole, photonRing, disk, glow, ship, shipTrail, stars, explosion;
+var blackhole, photonRing, disk, glow, arenaRing, ship, shipTrail, stars, explosion;
 var W = window.innerWidth, H = window.innerHeight;
 
 var game = {
-  time:0, score:0, best:0, lives:CONFIG.lives,
+  time:0, score:0, best:0, lives:CONFIG.lives, mult:1,
   posX:0, posZ:0, velX:0, velZ:0,
-  gravMul:1, horizon:CONFIG.horizonRadius,
+  gravMul:1, horizon:CONFIG.horizonRadius, arena:CONFIG.arenaR,
   invulnT:0, heading:0
 };
 
@@ -174,11 +183,10 @@ function init(){
   buildLivesUI();
   loadBest();
 
-  // show controls hint depending on device
   var touch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
   document.getElementById("startHint").innerHTML = touch
-    ? "Tilt the phone to steer · hold a finger to nudge<br>Play in landscape · headphones recommended"
-    : "Arrow keys / WASD to steer · M to mute<br>(gyroscope works on a phone via the live link)";
+    ? "Tilt the phone to steer · hold a finger to nudge<br>Hug the horizon for a higher score · play in landscape"
+    : "Arrow keys / WASD to steer · M to mute<br>Hug the horizon for a higher score";
 
   state = STATE.SPLASH;
   document.getElementById("banner").classList.remove("hidden");
@@ -228,6 +236,14 @@ function buildBlackHole(){
   );
   glow.rotation.x = -Math.PI/2; glow.position.y = -0.05;
   scene.add(glow);
+
+  // closing wall — faint ring marking the shrinking safe boundary
+  arenaRing = new THREE.Mesh(
+    new THREE.TorusGeometry(CONFIG.arenaR, 0.13, 12, 128),
+    new THREE.MeshBasicMaterial({ color:0x3a6aa0, transparent:true, opacity:0.4, blending:THREE.AdditiveBlending })
+  );
+  arenaRing.rotation.x = Math.PI/2;
+  scene.add(arenaRing);
 
   // accretion disk — custom swirl shader on a flat plane in the XZ plane
   var size = CONFIG.diskOuter*2;
@@ -279,7 +295,6 @@ function buildShip(){
   );
   body.rotation.x = Math.PI/2; // nose along +Z
   ship.add(body);
-  // thruster glow
   var th = new THREE.Mesh(
     new THREE.SphereGeometry(0.42, 12, 12),
     new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending })
@@ -289,7 +304,6 @@ function buildShip(){
   ship.position.y = 0.5;
   scene.add(ship);
 
-  // simple trail
   var tg = new THREE.BufferGeometry();
   var TN = 26; tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(TN*3),3));
   shipTrail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending }));
@@ -309,8 +323,8 @@ function buildExplosion(){
 //  GAME FLOW
 // ============================================================
 function startGame(){
-  game.time=0; game.score=0; game.lives=CONFIG.lives;
-  game.gravMul=1; game.horizon=CONFIG.horizonRadius;
+  game.time=0; game.score=0; game.mult=1; game.lives=CONFIG.lives;
+  game.gravMul=1; game.horizon=CONFIG.horizonRadius; game.arena=CONFIG.arenaR;
   resetShip(true);
   buildLivesUI();
   document.getElementById("hud").classList.remove("hidden");
@@ -321,12 +335,12 @@ function startGame(){
 }
 
 function resetShip(full){
-  // spawn near the arena edge with a tangential kick -> begins orbiting
+  // spawn safely inside the current safe ring, with a tangential kick -> orbit
   var ang = Math.random()*Math.PI*2;
-  var r = CONFIG.arenaR*0.82;
+  var safe = Math.max(game.horizon + 4.0, (game.horizon + game.arena)*0.5);
+  var r = Math.min(game.arena*0.9, safe);
   game.posX = Math.cos(ang)*r; game.posZ = Math.sin(ang)*r;
-  var tang = ang + Math.PI/2;
-  var speed = 10;
+  var tang = ang + Math.PI/2, speed = 10;
   game.velX = Math.cos(tang)*speed; game.velZ = Math.sin(tang)*speed;
   game.invulnT = CONFIG.invuln;
   if(shipTrail) shipTrail.userData.pts = [];
@@ -344,9 +358,10 @@ function loseLife(){
 
 function gameOver(){
   state = STATE.OVER;
-  game.best = Math.max(game.best, game.score);
+  var sc = Math.floor(game.score);
+  game.best = Math.max(game.best, sc);
   saveBest();
-  document.getElementById("goScore").textContent = game.score;
+  document.getElementById("goScore").textContent = sc;
   document.getElementById("goBest").textContent = game.best;
   document.getElementById("gameover").classList.remove("hidden");
   document.getElementById("hud").classList.add("hidden");
@@ -358,12 +373,12 @@ function gameOver(){
 // ============================================================
 function update(dt){
   if(state!==STATE.PLAY){ return; }
-  dt = Math.min(dt, 0.05); // clamp big frame gaps
+  dt = Math.min(dt, 0.05);
 
   game.time += dt;
-  game.score = Math.floor(game.time*10);
   game.gravMul = 1 + game.time*CONFIG.gravRamp;
   game.horizon = CONFIG.horizonRadius + game.time*CONFIG.horizonGrow;
+  game.arena   = Math.max(CONFIG.arenaMin, CONFIG.arenaR - game.time*CONFIG.arenaShrink);
 
   // ---- input vector ----
   var ix=0, iz=0;
@@ -377,10 +392,10 @@ function update(dt){
   }
   var il = Math.hypot(ix,iz); if(il>1){ ix/=il; iz/=il; }
 
-  // ---- gravity (inward) ----
+  // ---- gravity (inward, 1/r so the edge is felt too) ----
   var r = Math.hypot(game.posX, game.posZ) || 0.0001;
   var rc = Math.max(r, CONFIG.gravMinR);
-  var g = (CONFIG.gravBase*game.gravMul)/(rc*rc);
+  var g = (CONFIG.gravBase*game.gravMul)/rc;
   var gx = -(game.posX/r)*g, gz = -(game.posZ/r)*g;
 
   // ---- thrust ----
@@ -392,43 +407,52 @@ function update(dt){
   game.velX *= damp; game.velZ *= damp;
   game.posX += game.velX*dt; game.posZ += game.velZ*dt;
 
-  // soft arena boundary — push back gently
+  // closing wall — push back gently at the shrinking boundary
   var nr = Math.hypot(game.posX, game.posZ);
-  if(nr > CONFIG.arenaR){
-    var k=(nr-CONFIG.arenaR);
+  if(nr > game.arena){
+    var k=(nr-game.arena);
     game.velX -= (game.posX/nr)*k*6*dt;
     game.velZ -= (game.posZ/nr)*k*6*dt;
+    nr = Math.hypot(game.posX, game.posZ);
   }
 
-  // thrust sound intensity
   setThrust(il>0.05);
 
   // ---- collision with horizon ----
   if(game.invulnT>0){ game.invulnT-=dt; }
-  else if(nr < game.horizon + CONFIG.shipRadius){ loseLife(); }
+  else if(nr < game.horizon + CONFIG.shipRadius){ loseLife(); return; }
+
+  // ---- risk / reward scoring: closer to the horizon => bigger multiplier ----
+  var d = nr - game.horizon;                                   // distance above horizon
+  var prox = Math.max(0, Math.min(1, 1 - d/CONFIG.bonusZone)); // 0 far .. 1 hugging
+  game.mult = 1 + CONFIG.bonusMax*prox;
+  game.score += dt * CONFIG.scoreBase * game.mult;
 
   // ---- warning feedback ----
   var warn = 0;
-  if(nr < CONFIG.warnRadius){ warn = 1-((nr-game.horizon)/(CONFIG.warnRadius-game.horizon)); warn=Math.max(0,Math.min(1,warn)); }
+  if(d < CONFIG.warnRadius){ warn = 1 - (d/CONFIG.warnRadius); warn=Math.max(0,Math.min(1,warn)); }
   document.getElementById("vignette").style.opacity = (warn*0.9).toFixed(2);
-  if(warn>0.35){ sfxWarnMaybe(); }
+  if(warn>0.4){ sfxWarnMaybe(); }
 
   // ---- reflect into 3D ----
   ship.position.x = game.posX; ship.position.z = game.posZ;
   if(Math.hypot(game.velX,game.velZ)>0.4){ game.heading = Math.atan2(game.velX, game.velZ); }
   ship.rotation.y = game.heading;
-  // blink during invulnerability
   ship.visible = !(game.invulnT>0 && (Math.floor(game.time*12)%2===0));
   var th = ship.userData.thruster; if(th){ th.material.opacity = il>0.05 ? 0.95 : 0.35; }
   updateTrail();
 
-  // grow the hole visuals with difficulty
+  // grow the hole + close the wall visually
   var hs = game.horizon/CONFIG.horizonRadius;
   blackhole.scale.setScalar(hs); photonRing.scale.setScalar(hs); glow.scale.setScalar(hs);
+  if(arenaRing) arenaRing.scale.setScalar(game.arena/CONFIG.arenaR);
 
   // HUD
   document.getElementById("timeVal").textContent = game.time.toFixed(1);
-  document.getElementById("scoreVal").textContent = game.score;
+  document.getElementById("scoreVal").textContent = Math.floor(game.score);
+  var mv = document.getElementById("multVal");
+  mv.textContent = "×"+game.mult.toFixed(1);
+  mv.style.color = game.mult>3 ? "#ff9d3c" : (game.mult>1.6 ? "#ffd166" : "#6a6a78");
 }
 
 function updateTrail(){
@@ -477,7 +501,6 @@ function animate(){
   update(dt);
   updateExplosion(dt);
 
-  // gentle idle camera breathe
   camera.position.x = Math.sin(t*0.15)*1.2;
   camera.lookAt(0,0,0);
 
@@ -499,13 +522,12 @@ function bindEvents(){
 
   // Listen on window so taps on the splash / game-over overlays also register (mobile).
   window.addEventListener("pointerdown", function(e){
-    if(e.target && e.target.closest && e.target.closest("#mute")) return; // let mute button do its thing
+    if(e.target && e.target.closest && e.target.closest("#mute")) return;
     pointer.active=true; setPointer(e);
     if(state!==STATE.PLAY) handleAdvance();
   });
   window.addEventListener("pointermove", function(e){ if(pointer.active) setPointer(e); });
   window.addEventListener("pointerup", function(){ pointer.active=false; pointer.x=0; pointer.z=0; });
-  // extra safety net for older mobile browsers
   window.addEventListener("touchstart", function(){ if(state!==STATE.PLAY) handleAdvance(); }, {passive:true});
 
   document.getElementById("mute").addEventListener("click", function(e){ e.stopPropagation(); toggleMute(); });
@@ -514,7 +536,6 @@ function bindEvents(){
 }
 
 function setPointer(e){
-  // vector from screen centre to touch -> desired thrust direction (screen y -> world z)
   var nx=(e.clientX/W)*2-1, ny=(e.clientY/H)*2-1;
   var l=Math.hypot(nx,ny); if(l>1){ nx/=l; ny/=l; }
   pointer.x=nx; pointer.z=ny;
@@ -528,9 +549,9 @@ function handleAdvance(){
 function onGyro(e){
   if(e.gamma===null || e.beta===null) return;
   gyro.has=true;
-  if(gyro.neutralBeta===null) gyro.neutralBeta = e.beta; // calibrate to how it's held
-  var gx = e.gamma/35;                       // left-right tilt
-  var gz = (e.beta - gyro.neutralBeta)/35;   // front-back tilt
+  if(gyro.neutralBeta===null) gyro.neutralBeta = e.beta;
+  var gx = e.gamma/35;
+  var gz = (e.beta - gyro.neutralBeta)/35;
   gyro.x = Math.max(-1,Math.min(1,gx));
   gyro.z = Math.max(-1,Math.min(1,gz));
 }
@@ -542,7 +563,7 @@ function requestGyro(){
         if(res==="granted"){ gyro.enabled=true; gyro.neutralBeta=null; }
       }).catch(function(){});
     } else if('ontouchstart' in window || navigator.maxTouchPoints>0){
-      gyro.enabled=true; gyro.neutralBeta=null; // Android / non-iOS
+      gyro.enabled=true; gyro.neutralBeta=null;
     }
   }catch(err){}
 }
@@ -589,7 +610,6 @@ function ensureAudio(){
     audio.master.gain.value = audio.muted?0:0.9;
     audio.master.connect(audio.ctx.destination);
     setupThrust();
-    // optional background music (Suno). Silent if file missing.
     var el = new Audio(); el.loop=true; el.src=MUSIC_FILE; el.volume=0.55;
     el.addEventListener("error", function(){ audio.music=null; });
     audio.music = el;
