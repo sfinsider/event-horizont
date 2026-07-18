@@ -74,6 +74,13 @@
   #tuner input[type=range]{ flex:1; min-width:0; accent-color:var(--gold); height:20px; }
   #tuner .tval{ flex:0 0 44px; text-align:right; color:#fff; font-variant-numeric:tabular-nums; }
   #tuner .tnote{ margin-top:9px; font-size:9px; letter-spacing:1px; color:#6a6a78; text-align:center; }
+
+  /* recalibrate (gyro recenter) button */
+  #recal{ position:fixed; bottom:66px; right:16px; z-index:9; width:44px; height:44px; border-radius:50%;
+          border:1px solid rgba(201,162,39,0.5); background:rgba(0,0,0,0.45); color:var(--gold);
+          font-size:21px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+          transition:background 0.15s, color 0.15s, transform 0.15s; }
+  #recal.ok{ background:rgba(201,162,39,0.9); color:#000; transform:scale(1.12); }
 </style>
 </head>
 <body>
@@ -109,15 +116,20 @@
 </div>
 
 <div id="mute" class="hidden">🔇</div>
+<div id="recal" class="hidden" title="Recenter tilt">◎</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3.1</div>
+<div id="banner" class="hidden">prototype build · v0.3.2</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.3)
+   EVENT HORIZON — three.js prototype (v0.3.2)
+   v0.3.2 changes:
+     - recenter/recalibrate button (◎) for the gyro: taps set
+       the current phone pose as neutral on BOTH axes (beta+gamma),
+       so drift from shifting your grip is fixable mid-run
    v0.3 changes:
      - accelerating suction (quadratic gravity ramp) so the
        early game stops being a free ride
@@ -194,7 +206,7 @@ var pulseT = 0;
 
 // ---------- input ----------
 var keys = {};
-var gyro = { enabled:false, has:false, neutralBeta:null, x:0, z:0 };
+var gyro = { enabled:false, has:false, neutralBeta:null, neutralGamma:null, x:0, z:0 };
 var pointer = { active:false, x:0, z:0 };
 
 // ---------- audio ----------
@@ -235,7 +247,7 @@ function init(){
 
   var touch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
   document.getElementById("startHint").innerHTML = touch
-    ? "Tilt the phone to steer · hold a finger to nudge<br>Hug the horizon for a higher score · play in landscape"
+    ? "Tilt the phone to steer · hold a finger to nudge · ◎ recenters tilt<br>Hug the horizon for a higher score · play in landscape"
     : "Arrow keys / WASD to steer · M to mute<br>Hug the horizon for a higher score";
 
   state = STATE.SPLASH;
@@ -404,6 +416,9 @@ function startGame(){
   document.getElementById("splash").classList.add("hidden");
   document.getElementById("gameover").classList.add("hidden");
   document.getElementById("tuner").classList.add("hidden");
+  // recenter button is only useful with the gyro, so show it on touch devices while playing
+  var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  document.getElementById("recal").classList.toggle("hidden", !isTouch);
   state = STATE.PLAY;
   startMusic();
 }
@@ -447,6 +462,7 @@ function gameOver(){
   document.getElementById("goBest").textContent = game.best;
   document.getElementById("gameover").classList.remove("hidden");
   document.getElementById("hud").classList.add("hidden");
+  document.getElementById("recal").classList.add("hidden");
   stopMusic(); sfxGameOver();
 }
 
@@ -687,7 +703,7 @@ function animate(){
 //  INPUT / EVENTS
 // ============================================================
 function isUI(e){
-  return e.target && e.target.closest && e.target.closest("#mute,#tuner,#tunerBtn");
+  return e.target && e.target.closest && e.target.closest("#mute,#tuner,#tunerBtn,#recal");
 }
 
 function bindEvents(){
@@ -711,6 +727,8 @@ function bindEvents(){
   window.addEventListener("touchstart", function(e){ if(isUI(e)) return; if(state!==STATE.PLAY) handleAdvance(); }, {passive:true});
 
   document.getElementById("mute").addEventListener("click", function(e){ e.stopPropagation(); toggleMute(); });
+  document.getElementById("recal").addEventListener("click", function(e){ e.stopPropagation(); recalibrate(); });
+  document.getElementById("recal").addEventListener("pointerdown", function(e){ e.stopPropagation(); });
   document.getElementById("tunerBtn").addEventListener("click", function(e){
     e.stopPropagation();
     document.getElementById("tuner").classList.toggle("hidden");
@@ -733,21 +751,32 @@ function handleAdvance(){
 function onGyro(e){
   if(e.gamma===null || e.beta===null) return;
   gyro.has=true;
-  if(gyro.neutralBeta===null) gyro.neutralBeta = e.beta;
-  var gx = e.gamma/35;
-  var gz = (e.beta - gyro.neutralBeta)/35;
+  // capture "however I'm holding it now" as neutral on both axes
+  if(gyro.neutralBeta===null)  gyro.neutralBeta  = e.beta;
+  if(gyro.neutralGamma===null) gyro.neutralGamma = e.gamma;
+  var gx = (e.gamma - gyro.neutralGamma)/35;
+  var gz = (e.beta  - gyro.neutralBeta )/35;
   gyro.x = Math.max(-1,Math.min(1,gx));
   gyro.z = Math.max(-1,Math.min(1,gz));
+}
+
+function recalibrate(){
+  // next deviceorientation event re-captures the neutral pose on both axes
+  gyro.neutralBeta = null;
+  gyro.neutralGamma = null;
+  var b=document.getElementById("recal");
+  if(b){ b.classList.add("ok"); setTimeout(function(){ b.classList.remove("ok"); }, 280); }
+  beepOK();
 }
 
 function requestGyro(){
   try{
     if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
       DeviceOrientationEvent.requestPermission().then(function(res){
-        if(res==="granted"){ gyro.enabled=true; gyro.neutralBeta=null; }
+        if(res==="granted"){ gyro.enabled=true; gyro.neutralBeta=null; gyro.neutralGamma=null; }
       }).catch(function(){});
     } else if('ontouchstart' in window || navigator.maxTouchPoints>0){
-      gyro.enabled=true; gyro.neutralBeta=null;
+      gyro.enabled=true; gyro.neutralBeta=null; gyro.neutralGamma=null;
     }
   }catch(err){}
 }
@@ -880,6 +909,16 @@ function sfxGameOver(){
     var st=now+i*0.16;
     g.gain.setValueAtTime(0.0001,st); g.gain.linearRampToValueAtTime(0.3,st+0.03); g.gain.exponentialRampToValueAtTime(0.001,st+0.4);
     o.connect(g); g.connect(audio.master); o.start(st); o.stop(st+0.45);
+  });
+}
+function beepOK(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  [523,784].forEach(function(fr,i){
+    var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+    o.type="sine"; o.frequency.value=fr; var st=now+i*0.07;
+    g.gain.setValueAtTime(0.0001,st); g.gain.linearRampToValueAtTime(0.16,st+0.02); g.gain.exponentialRampToValueAtTime(0.001,st+0.18);
+    o.connect(g); g.connect(audio.master); o.start(st); o.stop(st+0.2);
   });
 }
 function beep(fr,dur,type,vol){
