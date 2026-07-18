@@ -61,6 +61,19 @@
          border:1px solid rgba(201,162,39,0.5); background:rgba(0,0,0,0.45); color:var(--gold);
          font-size:19px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
   #banner{ position:fixed; bottom:16px; left:0; right:0; z-index:8; text-align:center; font-size:11px; letter-spacing:2px; color:#6a6a78; pointer-events:none; }
+
+  /* tuning panel */
+  #tunerBtn{ position:fixed; bottom:14px; left:16px; z-index:9; width:44px; height:44px; border-radius:50%;
+             border:1px solid rgba(201,162,39,0.5); background:rgba(0,0,0,0.45); color:var(--gold);
+             font-size:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  #tuner{ position:fixed; bottom:66px; left:12px; z-index:11; width:min(300px,86vw);
+          background:rgba(8,8,12,0.93); border:1px solid rgba(201,162,39,0.35); border-radius:12px;
+          padding:14px 14px 10px; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+  #tuner .trow{ display:flex; align-items:center; gap:8px; margin:8px 0; font-size:11px; letter-spacing:1px; }
+  #tuner label{ color:var(--gold); flex:0 0 90px; text-transform:uppercase; }
+  #tuner input[type=range]{ flex:1; min-width:0; accent-color:var(--gold); height:20px; }
+  #tuner .tval{ flex:0 0 44px; text-align:right; color:#fff; font-variant-numeric:tabular-nums; }
+  #tuner .tnote{ margin-top:9px; font-size:9px; letter-spacing:1px; color:#6a6a78; text-align:center; }
 </style>
 </head>
 <body>
@@ -96,21 +109,29 @@
 </div>
 
 <div id="mute" class="hidden">🔇</div>
-<div id="banner" class="hidden">prototype build · v0.2</div>
+<div id="tunerBtn" class="hidden">⚙</div>
+<div id="tuner" class="hidden"></div>
+<div id="banner" class="hidden">prototype build · v0.3</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.2)
-   Difficulty = risk/reward proximity scoring + shrinking safe
-   zone (growing horizon + closing wall) + 1/r gravity.
-   Tune everything in CONFIG below.
+   EVENT HORIZON — three.js prototype (v0.3)
+   v0.3 changes:
+     - accelerating suction (quadratic gravity ramp) so the
+       early game stops being a free ride
+     - layered events vs. monotony: inward-drifting debris to
+       dodge + a telegraphed gravity shockwave that knocks you
+       off course
+     - on-screen tuning panel (gear button) for live tuning on
+       a phone, no file reupload needed
+   Tune everything in CONFIG below or live via the gear panel.
    ============================================================ */
 
 var CONFIG = {
   horizonRadius: 3.6,     // event horizon (death radius) at start
-  horizonGrow:   0.09,    // world units the horizon grows per second
+  horizonGrow:   0.12,    // world units the horizon grows per second
   diskInner:     4.2,
   diskOuter:     17.0,
   arenaR:        27.0,    // starting outer wall (safe boundary)
@@ -118,7 +139,8 @@ var CONFIG = {
   arenaMin:      12.5,    // wall floor
   shipRadius:    1.0,
   gravBase:      150.0,   // pull strength (1/r model — reaches the edge)
-  gravRamp:      0.06,    // pull multiplier growth per second
+  gravRamp:      0.06,    // linear pull-multiplier growth per second
+  gravAccel:     0.0032,  // quadratic term: suction accelerates over time
   gravMinR:      3.2,     // clamp so pull near centre stays finite
   thrust:        62.0,    // player acceleration
   damping:       0.992,   // velocity retention per frame (60fps ref)
@@ -128,8 +150,26 @@ var CONFIG = {
   // ---- risk / reward scoring ----
   scoreBase:     10,      // points per second at a safe distance
   bonusZone:     8.0,     // within this many units above the horizon, bonus ramps
-  bonusMax:      7.0      // hugging the horizon => up to 1 + bonusMax multiplier
+  bonusMax:      7.0,     // hugging the horizon => up to 1 + bonusMax multiplier
+  // ---- layered events (v0.3) ----
+  debrisInterval:5.5,     // seconds between debris spawns (lower = busier)
+  debrisIntMin:  2.2,     // spawn-interval floor as the run speeds up
+  debrisSpeed:   7.0,     // initial inward drift speed of a chunk
+  debrisRadius:  0.9,     // base collision size of a chunk
+  pulseInterval: 17.0,    // seconds between gravity shockwaves
+  pulseSpeed:    26.0,    // shockwave ring expansion speed (units/sec)
+  pulseKick:     24.0     // velocity impulse when the wave hits the ship
 };
+
+// keys exposed on the on-screen tuning panel
+var TUNE = [
+  { k:"gravRamp",       label:"Suction ramp",  min:0,  max:0.2,  step:0.005,  dp:3 },
+  { k:"gravAccel",      label:"Suction accel", min:0,  max:0.01, step:0.0002, dp:4 },
+  { k:"horizonGrow",    label:"Horizon grow",  min:0,  max:0.3,  step:0.005,  dp:3 },
+  { k:"arenaShrink",    label:"Wall close",    min:0,  max:0.4,  step:0.005,  dp:3 },
+  { k:"debrisInterval", label:"Debris rate",   min:2,  max:12,   step:0.5,    dp:1 },
+  { k:"thrust",         label:"Thrust",        min:40, max:90,   step:1,      dp:0 }
+];
 
 // ---------- state ----------
 var STATE = { BOOT:0, SPLASH:1, PLAY:2, OVER:3 };
@@ -142,8 +182,15 @@ var game = {
   time:0, score:0, best:0, lives:CONFIG.lives, mult:1,
   posX:0, posZ:0, velX:0, velZ:0,
   gravMul:1, horizon:CONFIG.horizonRadius, arena:CONFIG.arenaR,
-  invulnT:0, heading:0
+  invulnT:0, heading:0, shake:0
 };
+
+// ---------- layered events ----------
+var debris = [];
+var DEBRIS_N = 14;
+var debrisT = 0;
+var pulse = { active:false, r:0, hit:false, mesh:null };
+var pulseT = 0;
 
 // ---------- input ----------
 var keys = {};
@@ -177,10 +224,13 @@ function init(){
   buildBlackHole();
   buildShip();
   buildExplosion();
+  buildDebris();
+  buildPulse();
 
   clock = new THREE.Clock();
   bindEvents();
   buildLivesUI();
+  buildTuner();
   loadBest();
 
   var touch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
@@ -191,6 +241,7 @@ function init(){
   state = STATE.SPLASH;
   document.getElementById("banner").classList.remove("hidden");
   document.getElementById("mute").classList.remove("hidden");
+  document.getElementById("tunerBtn").classList.remove("hidden");
   checkOrientation();
   animate();
 }
@@ -319,17 +370,40 @@ function buildExplosion(){
   scene.add(explosion);
 }
 
+function buildDebris(){
+  var geo = new THREE.IcosahedronGeometry(1, 0); // shared low-poly rock
+  for(var i=0;i<DEBRIS_N;i++){
+    var m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color:0x9a8c7a, emissive:0x180d05, metalness:0.25, roughness:0.9, flatShading:true
+    }));
+    m.visible = false; scene.add(m);
+    debris.push({ mesh:m, active:false, x:0, z:0, vx:0, vz:0, rad:CONFIG.debrisRadius, sx:0, sy:0, sz:0 });
+  }
+}
+
+function buildPulse(){
+  pulse.mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(1, 0.16, 10, 100),
+    new THREE.MeshBasicMaterial({ color:0x8fbaff, transparent:true, opacity:0, blending:THREE.AdditiveBlending })
+  );
+  pulse.mesh.rotation.x = Math.PI/2;
+  pulse.mesh.visible = false;
+  scene.add(pulse.mesh);
+}
+
 // ============================================================
 //  GAME FLOW
 // ============================================================
 function startGame(){
   game.time=0; game.score=0; game.mult=1; game.lives=CONFIG.lives;
-  game.gravMul=1; game.horizon=CONFIG.horizonRadius; game.arena=CONFIG.arenaR;
+  game.gravMul=1; game.horizon=CONFIG.horizonRadius; game.arena=CONFIG.arenaR; game.shake=0;
+  clearEvents();
   resetShip(true);
   buildLivesUI();
   document.getElementById("hud").classList.remove("hidden");
   document.getElementById("splash").classList.add("hidden");
   document.getElementById("gameover").classList.add("hidden");
+  document.getElementById("tuner").classList.add("hidden");
   state = STATE.PLAY;
   startMusic();
 }
@@ -346,11 +420,18 @@ function resetShip(full){
   if(shipTrail) shipTrail.userData.pts = [];
 }
 
+function clearEvents(){
+  for(var i=0;i<debris.length;i++){ debris[i].active=false; debris[i].mesh.visible=false; }
+  pulse.active=false; if(pulse.mesh) pulse.mesh.visible=false;
+  debrisT=0; pulseT=0;
+}
+
 function loseLife(){
   game.lives--;
   triggerExplosion();
   sfxDeath();
   flashVignette();
+  game.shake = 0.6;
   buildLivesUI();
   if(game.lives<=0){ gameOver(); }
   else { resetShip(false); }
@@ -358,6 +439,7 @@ function loseLife(){
 
 function gameOver(){
   state = STATE.OVER;
+  clearEvents();
   var sc = Math.floor(game.score);
   game.best = Math.max(game.best, sc);
   saveBest();
@@ -376,7 +458,8 @@ function update(dt){
   dt = Math.min(dt, 0.05);
 
   game.time += dt;
-  game.gravMul = 1 + game.time*CONFIG.gravRamp;
+  // accelerating suction: linear ramp + quadratic term so the edge stops being a free ride
+  game.gravMul = 1 + CONFIG.gravRamp*game.time + CONFIG.gravAccel*game.time*game.time;
   game.horizon = CONFIG.horizonRadius + game.time*CONFIG.horizonGrow;
   game.arena   = Math.max(CONFIG.arenaMin, CONFIG.arenaR - game.time*CONFIG.arenaShrink);
 
@@ -434,6 +517,11 @@ function update(dt){
   document.getElementById("vignette").style.opacity = (warn*0.9).toFixed(2);
   if(warn>0.4){ sfxWarnMaybe(); }
 
+  // ---- layered events ----
+  updateDebris(dt);
+  if(state!==STATE.PLAY){ return; } // a debris hit may have ended the run
+  updatePulse(dt);
+
   // ---- reflect into 3D ----
   ship.position.x = game.posX; ship.position.z = game.posZ;
   if(Math.hypot(game.velX,game.velZ)>0.4){ game.heading = Math.atan2(game.velX, game.velZ); }
@@ -464,6 +552,90 @@ function updateTrail(){
     pos[i*3]=p[0]; pos[i*3+1]=p[1]; pos[i*3+2]=p[2];
   }
   shipTrail.geometry.attributes.position.needsUpdate = true;
+}
+
+// ============================================================
+//  LAYERED EVENTS — debris + gravity pulse
+// ============================================================
+function spawnDebris(){
+  var d=null;
+  for(var i=0;i<debris.length;i++){ if(!debris[i].active){ d=debris[i]; break; } }
+  if(!d) return;
+  var ang = Math.random()*Math.PI*2;
+  var r = game.arena*0.98;
+  d.x = Math.cos(ang)*r; d.z = Math.sin(ang)*r;
+  // aim inward with a tangential swirl so it spirals rather than falling straight
+  var inward = ang + Math.PI;
+  var swirl = (Math.random()<0.5?1:-1) * (0.4+Math.random()*0.6);
+  var sp = CONFIG.debrisSpeed * (0.8+Math.random()*0.6);
+  d.vx = Math.cos(inward)*sp - Math.sin(inward)*sp*swirl*0.5;
+  d.vz = Math.sin(inward)*sp + Math.cos(inward)*sp*swirl*0.5;
+  var scl = 0.7+Math.random()*0.9;
+  d.rad = CONFIG.debrisRadius*scl;
+  d.mesh.scale.setScalar(scl);
+  d.sx=(Math.random()-0.5)*2.4; d.sy=(Math.random()-0.5)*2.4; d.sz=(Math.random()-0.5)*2.4;
+  d.active=true; d.mesh.visible=true;
+  d.mesh.position.set(d.x,0.4,d.z);
+}
+
+function updateDebris(dt){
+  // spawn cadence tightens as the run goes on
+  var interval = Math.max(CONFIG.debrisIntMin, CONFIG.debrisInterval - game.time*0.03);
+  debrisT += dt;
+  if(debrisT >= interval){
+    debrisT = 0;
+    spawnDebris();
+    if(game.time>35 && Math.random()<0.45) spawnDebris(); // occasional pair later on
+  }
+  for(var i=0;i<debris.length;i++){
+    var d=debris[i]; if(!d.active) continue;
+    var r=Math.hypot(d.x,d.z)||0.0001;
+    var rc=Math.max(r,CONFIG.gravMinR);
+    var gg=(CONFIG.gravBase*game.gravMul)/rc;
+    d.vx += -(d.x/r)*gg*dt; d.vz += -(d.z/r)*gg*dt;
+    d.x += d.vx*dt; d.z += d.vz*dt;
+    d.mesh.position.set(d.x,0.4,d.z);
+    d.mesh.rotation.x += d.sx*dt; d.mesh.rotation.y += d.sy*dt; d.mesh.rotation.z += d.sz*dt;
+    // swallowed by the horizon
+    if(r < game.horizon + d.rad*0.5){ d.active=false; d.mesh.visible=false; continue; }
+    // drifted well outside the arena
+    if(r > CONFIG.arenaR*1.5){ d.active=false; d.mesh.visible=false; continue; }
+    // collision with the ship
+    if(game.invulnT<=0){
+      var dx=d.x-game.posX, dz=d.z-game.posZ;
+      if(Math.hypot(dx,dz) < d.rad + CONFIG.shipRadius){
+        d.active=false; d.mesh.visible=false; loseLife(); return;
+      }
+    }
+  }
+}
+
+function triggerPulse(){
+  pulse.active=true; pulse.r=game.horizon+1.0; pulse.hit=false;
+  pulse.mesh.visible=true; pulse.mesh.material.opacity=0.7;
+  sfxPulse();
+}
+
+function updatePulse(dt){
+  pulseT += dt;
+  if(pulseT >= CONFIG.pulseInterval && game.time>8 && !pulse.active){ pulseT=0; triggerPulse(); }
+  if(!pulse.active) return;
+  pulse.r += CONFIG.pulseSpeed*dt;
+  pulse.mesh.scale.setScalar(pulse.r);
+  pulse.mesh.material.opacity = Math.max(0, 0.7*(1 - pulse.r/(CONFIG.arenaR*1.15)));
+  // the wave knocks the ship as it sweeps past its radius
+  var shipR = Math.hypot(game.posX, game.posZ);
+  if(!pulse.hit && pulse.r >= shipR){
+    pulse.hit=true;
+    if(game.invulnT<=0){
+      var nrm = shipR||0.0001, kick = CONFIG.pulseKick;
+      game.velX += (game.posX/nrm)*kick + (Math.random()-0.5)*kick*0.5;
+      game.velZ += (game.posZ/nrm)*kick + (Math.random()-0.5)*kick*0.5;
+      game.shake = Math.max(game.shake, 0.4);
+      flashVignette();
+    }
+  }
+  if(pulse.r > CONFIG.arenaR*1.2){ pulse.active=false; pulse.mesh.visible=false; }
 }
 
 // ---------- explosion ----------
@@ -501,7 +673,11 @@ function animate(){
   update(dt);
   updateExplosion(dt);
 
-  camera.position.x = Math.sin(t*0.15)*1.2;
+  // camera: slow drift + brief shake on impacts
+  var sh = 0;
+  if(game.shake>0){ game.shake=Math.max(0, game.shake-dt*1.8); sh=game.shake; }
+  camera.position.x = Math.sin(t*0.15)*1.2 + (Math.random()-0.5)*sh*2.2;
+  camera.position.y = 34 + (Math.random()-0.5)*sh*2.2;
   camera.lookAt(0,0,0);
 
   renderer.render(scene,camera);
@@ -510,6 +686,10 @@ function animate(){
 // ============================================================
 //  INPUT / EVENTS
 // ============================================================
+function isUI(e){
+  return e.target && e.target.closest && e.target.closest("#mute,#tuner,#tunerBtn");
+}
+
 function bindEvents(){
   window.addEventListener("resize", onResize);
   window.addEventListener("keydown", function(e){
@@ -522,15 +702,19 @@ function bindEvents(){
 
   // Listen on window so taps on the splash / game-over overlays also register (mobile).
   window.addEventListener("pointerdown", function(e){
-    if(e.target && e.target.closest && e.target.closest("#mute")) return;
+    if(isUI(e)) return;
     pointer.active=true; setPointer(e);
     if(state!==STATE.PLAY) handleAdvance();
   });
   window.addEventListener("pointermove", function(e){ if(pointer.active) setPointer(e); });
   window.addEventListener("pointerup", function(){ pointer.active=false; pointer.x=0; pointer.z=0; });
-  window.addEventListener("touchstart", function(){ if(state!==STATE.PLAY) handleAdvance(); }, {passive:true});
+  window.addEventListener("touchstart", function(e){ if(isUI(e)) return; if(state!==STATE.PLAY) handleAdvance(); }, {passive:true});
 
   document.getElementById("mute").addEventListener("click", function(e){ e.stopPropagation(); toggleMute(); });
+  document.getElementById("tunerBtn").addEventListener("click", function(e){
+    e.stopPropagation();
+    document.getElementById("tuner").classList.toggle("hidden");
+  });
   window.addEventListener("orientationchange", checkOrientation);
   window.addEventListener("deviceorientation", onGyro);
 }
@@ -581,7 +765,7 @@ function checkOrientation(){
 }
 
 // ============================================================
-//  HUD helpers
+//  HUD + tuning panel helpers
 // ============================================================
 function buildLivesUI(){
   var wrap=document.getElementById("lives"); wrap.innerHTML="";
@@ -591,6 +775,34 @@ function buildLivesUI(){
     wrap.appendChild(d);
   }
 }
+
+function buildTuner(){
+  var box=document.getElementById("tuner");
+  var html="";
+  for(var i=0;i<TUNE.length;i++){
+    var t=TUNE[i];
+    html+='<div class="trow"><label>'+t.label+'</label>'
+        + '<input type="range" id="t_'+t.k+'" min="'+t.min+'" max="'+t.max+'" step="'+t.step+'">'
+        + '<span class="tval" id="v_'+t.k+'"></span></div>';
+  }
+  html+='<div class="tnote">Live tuning · changes apply instantly</div>';
+  box.innerHTML=html;
+  for(var j=0;j<TUNE.length;j++){
+    (function(t){
+      var inp=document.getElementById("t_"+t.k);
+      var out=document.getElementById("v_"+t.k);
+      inp.value=CONFIG[t.k];
+      out.textContent=Number(CONFIG[t.k]).toFixed(t.dp);
+      inp.addEventListener("input", function(){
+        CONFIG[t.k]=parseFloat(inp.value);
+        out.textContent=CONFIG[t.k].toFixed(t.dp);
+      });
+      // keep steering from firing while dragging a slider
+      inp.addEventListener("pointerdown", function(e){ e.stopPropagation(); });
+    })(TUNE[j]);
+  }
+}
+
 function flashVignette(){
   var v=document.getElementById("vignette"); v.style.opacity="1";
   setTimeout(function(){ v.style.opacity="0"; },140);
@@ -650,6 +862,14 @@ function sfxDeath(){
   o.type="sawtooth"; o.frequency.setValueAtTime(320,now); o.frequency.exponentialRampToValueAtTime(40,now+0.7);
   g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.75);
   o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+0.8);
+}
+function sfxPulse(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(150,now); o.frequency.exponentialRampToValueAtTime(48,now+0.5);
+  g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.24,now+0.05); g.gain.exponentialRampToValueAtTime(0.001,now+0.6);
+  o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+0.65);
 }
 function sfxGameOver(){
   if(!audio.ctx||audio.muted) return;
