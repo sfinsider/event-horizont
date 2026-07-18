@@ -111,7 +111,7 @@
 <div id="mute" class="hidden">🔇</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3</div>
+<div id="banner" class="hidden">prototype build · v0.3.1</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -135,12 +135,12 @@ var CONFIG = {
   diskInner:     4.2,
   diskOuter:     17.0,
   arenaR:        27.0,    // starting outer wall (safe boundary)
-  arenaShrink:   0.16,    // units/sec the wall closes in
+  arenaShrink:   0.265,   // units/sec the wall closes in (tuned 2026-07-18)
   arenaMin:      12.5,    // wall floor
   shipRadius:    1.0,
   gravBase:      150.0,   // pull strength (1/r model — reaches the edge)
   gravRamp:      0.06,    // linear pull-multiplier growth per second
-  gravAccel:     0.0032,  // quadratic term: suction accelerates over time
+  gravAccel:     0.0064,  // quadratic term: suction accelerates over time (tuned 2026-07-18)
   gravMinR:      3.2,     // clamp so pull near centre stays finite
   thrust:        62.0,    // player acceleration
   damping:       0.992,   // velocity retention per frame (60fps ref)
