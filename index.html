@@ -23,6 +23,7 @@
          -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
          filter:drop-shadow(0 0 22px rgba(201,162,39,0.45)); }
   .logo .l2{ display:block; }
+  .logo-img{ display:block; width:min(600px,80vw); height:auto; mix-blend-mode:screen; }
   .tagline{ margin-top:14px; font-size:clamp(13px,3.4vw,20px); letter-spacing:6px; color:var(--gold); text-transform:uppercase; }
   .startline{ margin-top:40px; font-size:clamp(14px,3.6vw,20px); letter-spacing:3px; color:#fff; animation:blink 1.15s steps(1) infinite; }
   .hint{ margin-top:26px; font-size:clamp(11px,2.8vw,14px); color:#8a8a9a; line-height:1.9; letter-spacing:1px; }
@@ -35,6 +36,7 @@
     .tagline{ margin-top:7px; letter-spacing:4px; }
     .startline{ margin-top:15px; }
     .hint{ margin-top:11px; line-height:1.5; }
+    .logo-img{ width:auto; height:min(230px,40vh); }
   }
 
   /* HUD */
@@ -106,7 +108,7 @@
 <div id="vignette"></div>
 
 <div id="splash" class="overlay">
-  <div class="logo"><span class="l1">EVENT</span><span class="l2">HORIZON</span></div>
+  <img class="logo-img" src="logo.png" alt="EVENT HORIZON">
   <div class="tagline">Tilt to survive</div>
   <div class="startline" id="startLine">▶ PRESS ANY KEY / TAP TO START</div>
   <div class="hint" id="startHint"></div>
@@ -128,13 +130,17 @@
 <div id="recal" class="hidden" title="Recenter tilt">◎</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3.3</div>
+<div id="banner" class="hidden">prototype build · v0.3.4</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.3.3)
+   EVENT HORIZON — three.js prototype (v0.3.4)
+   v0.3.4 changes:
+     - image logo (logo.png) replaces the CSS text wordmark on the
+       splash, composited with mix-blend-mode:screen so the black
+       backdrop drops out and the live black hole shows through
    v0.3.3 changes:
      - splash fits on landscape phones: a max-height media query
        shrinks the logo + tightens spacing so the hint no longer
