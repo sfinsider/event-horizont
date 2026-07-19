@@ -142,6 +142,11 @@
        weighted time integral, and two equal metrics could even rank
        runs in contradictory order (safe-long vs brave-short).
        game.time still drives difficulty, it just isn't displayed.
+     - gear/tuning button hidden by default (append ?tune to the URL
+       to bring it back)
+     - landscape gyro fix: the tilt vector is rotated by
+       screen.orientation.angle so steering no longer comes out turned
+       90 degrees (or reversed) when the phone is held sideways
    v0.3.4 changes:
      - image logo (logo.png) replaces the CSS text wordmark on the
        splash, composited with mix-blend-mode:screen so the black
@@ -777,10 +782,17 @@ function onGyro(e){
   // capture "however I'm holding it now" as neutral on both axes
   if(gyro.neutralBeta===null)  gyro.neutralBeta  = e.beta;
   if(gyro.neutralGamma===null) gyro.neutralGamma = e.gamma;
-  var gx = (e.gamma - gyro.neutralGamma)/35;
-  var gz = (e.beta  - gyro.neutralBeta )/35;
-  gyro.x = Math.max(-1,Math.min(1,gx));
-  gyro.z = Math.max(-1,Math.min(1,gz));
+  var dh = (e.gamma - gyro.neutralGamma);   // device left-right tilt (portrait frame)
+  var dv = (e.beta  - gyro.neutralBeta );   // device front-back tilt (portrait frame)
+  // rotate the tilt vector into screen space so landscape steering
+  // isn't turned 90 degrees when the phone is held sideways
+  var a = ((screen.orientation && typeof screen.orientation.angle==="number")
+             ? screen.orientation.angle : (window.orientation||0)) * Math.PI/180;
+  var ca=Math.cos(a), sa=Math.sin(a);
+  var sx = ( dh*ca + dv*sa)/35;
+  var sy = (-dh*sa + dv*ca)/35;
+  gyro.x = Math.max(-1,Math.min(1,sx));
+  gyro.z = Math.max(-1,Math.min(1,sy));
 }
 
 function recalibrate(){
