@@ -277,7 +277,7 @@ function init(){
   state = STATE.SPLASH;
   document.getElementById("banner").classList.remove("hidden");
   document.getElementById("mute").classList.remove("hidden");
-  document.getElementById("tunerBtn").classList.remove("hidden");
+  if(/[?&#](tune|debug)/.test(location.href)) document.getElementById("tunerBtn").classList.remove("hidden");
   checkOrientation();
   animate();
 }
