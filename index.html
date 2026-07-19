@@ -98,7 +98,6 @@
 <div id="app"></div>
 
 <div id="hud" class="hidden">
-  <div class="block"><span class="label">TIME</span><span class="val" id="timeVal">0.0</span></div>
   <div id="right" class="block">
     <span class="label">SCORE</span><span class="val" id="scoreVal">0</span>
     <span class="mult" id="multVal">×1.0</span>
@@ -130,13 +129,19 @@
 <div id="recal" class="hidden" title="Recenter tilt">◎</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3.4</div>
+<div id="banner" class="hidden">prototype build · v0.3.5</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.3.4)
+   EVENT HORIZON — three.js prototype (v0.3.5)
+   v0.3.5 changes:
+     - one trophy number: TIME removed from the HUD entirely, only
+       SCORE remains. SCORE already contained time as the risk-
+       weighted time integral, and two equal metrics could even rank
+       runs in contradictory order (safe-long vs brave-short).
+       game.time still drives difficulty, it just isn't displayed.
    v0.3.4 changes:
      - image logo (logo.png) replaces the CSS text wordmark on the
        splash, composited with mix-blend-mode:screen so the black
@@ -571,7 +576,6 @@ function update(dt){
   if(arenaRing) arenaRing.scale.setScalar(game.arena/CONFIG.arenaR);
 
   // HUD
-  document.getElementById("timeVal").textContent = game.time.toFixed(1);
   document.getElementById("scoreVal").textContent = Math.floor(game.score);
   var mv = document.getElementById("multVal");
   mv.textContent = "×"+game.mult.toFixed(1);
