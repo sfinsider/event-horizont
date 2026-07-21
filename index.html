@@ -143,13 +143,18 @@
 <div id="recal" class="hidden" title="Recenter tilt">◎</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3.9</div>
+<div id="banner" class="hidden">prototype build · v0.3.10</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.3.9)
+   EVENT HORIZON — three.js prototype (v0.3.10)
+   v0.3.10 changes:
+     - music plays on the very first run: the track is preloaded at
+       page load so the first tap can start it (previously the audio
+       element was created on that first tap and wasn't ready until
+       run 2)
    v0.3.9 changes:
      - removed the continuous engine drone: on gyro the thrust
        oscillator was almost always on, reading as a low background
@@ -324,6 +329,7 @@ function init(){
     : "Arrow keys / WASD to steer · M to mute<br>Hug the horizon for a higher score";
 
   state = STATE.SPLASH;
+  preloadMusic();
   document.getElementById("banner").classList.remove("hidden");
   document.getElementById("mute").classList.remove("hidden");
   if(/[?&#](tune|debug)/.test(location.href)) document.getElementById("tunerBtn").classList.remove("hidden");
@@ -948,14 +954,20 @@ function ensureAudio(){
   try{
     var AC = window.AudioContext||window.webkitAudioContext;
     audio.ctx = new AC();
+    if(audio.ctx.state==="suspended") audio.ctx.resume();
     audio.master = audio.ctx.createGain();
     audio.master.gain.value = audio.muted?0:0.9;
     audio.master.connect(audio.ctx.destination);
     setupThrust();
-    var el = new Audio(); el.loop=true; el.src=MUSIC_FILE; el.volume=0.55;
-    el.addEventListener("error", function(){ audio.music=null; });
-    audio.music = el;
   }catch(e){ audio.ctx=null; }
+}
+function preloadMusic(){
+  if(audio.music) return;
+  try{
+    var el = new Audio(); el.loop=true; el.preload="auto"; el.src=MUSIC_FILE; el.volume=0.55;
+    el.addEventListener("error", function(){ audio.music=null; });
+    audio.music = el; el.load();
+  }catch(e){ audio.music=null; }
 }
 function toggleMute(){
   audio.muted=!audio.muted;
