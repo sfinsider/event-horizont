@@ -139,17 +139,20 @@
   <div style="margin-top:20px; letter-spacing:3px;">ROTATE TO LANDSCAPE</div>
 </div>
 
-<div id="mute" class="hidden">🔇</div>
+<div id="mute" class="hidden">🔊</div>
 <div id="recal" class="hidden" title="Recenter tilt">◎</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3.7</div>
+<div id="banner" class="hidden">prototype build · v0.3.8</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.3.7)
+   EVENT HORIZON — three.js prototype (v0.3.8)
+   v0.3.8 changes:
+     - audio on by default: music + SFX start with the game on the
+       first tap (leaving the splash); the mute button still silences
    v0.3.7 changes:
      - tuned defaults from live play: gentler suction (gravRamp
        0.06->0.005, gravAccel 0.0064->0.0002) and higher thrust
@@ -275,7 +278,7 @@ var gyro = { enabled:false, has:false, neutralBeta:null, neutralGamma:null, x:0,
 var pointer = { active:false, x:0, z:0 };
 
 // ---------- audio ----------
-var audio = { ctx:null, muted:true, master:null, music:null, thrustOsc:null, thrustGain:null };
+var audio = { ctx:null, muted:false, master:null, music:null, thrustOsc:null, thrustGain:null };
 var MUSIC_FILE = "music.ogg"; // drop a Suno-generated track next to this file
 
 // ============================================================
