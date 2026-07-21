@@ -143,13 +143,18 @@
 <div id="recal" class="hidden" title="Recenter tilt">◎</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3.10</div>
+<div id="banner" class="hidden">prototype build · v0.3.11</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.3.10)
+   EVENT HORIZON — three.js prototype (v0.3.11)
+   v0.3.11 changes:
+     - first-run music reliability: startMusic no longer forces
+       currentTime before the track is ready (that aborted the first
+       play), and it retries once the element fires canplay. this is
+       the same path the mute-toggle workaround exposed
    v0.3.10 changes:
      - music plays on the very first run: the track is preloaded at
        page load so the first tap can start it (previously the audio
@@ -975,7 +980,16 @@ function toggleMute(){
   if(audio.ctx){ audio.master.gain.value = audio.muted?0:0.9; }
   if(audio.music){ if(audio.muted) audio.music.pause(); else if(state===STATE.PLAY) audio.music.play().catch(function(){}); }
 }
-function startMusic(){ if(audio.music && !audio.muted){ audio.music.currentTime=0; audio.music.play().catch(function(){}); } }
+function startMusic(){
+  if(!audio.music || audio.muted) return;
+  var m = audio.music;
+  try{ if(m.readyState>0) m.currentTime=0; }catch(e){}   // seeking a not-ready element can abort the first play
+  var p = m.play();
+  if(p && p.catch){ p.catch(function(){
+    // first run can reject before the track is ready: retry once it can play
+    m.addEventListener("canplay", function(){ if(!audio.muted) m.play().catch(function(){}); }, { once:true });
+  }); }
+}
 function stopMusic(){ if(audio.music){ audio.music.pause(); } }
 
 function setupThrust(){
