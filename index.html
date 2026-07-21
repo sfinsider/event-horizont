@@ -46,12 +46,18 @@
   #hud .val{ color:#fff; font-size:1.5em; }
   #right{ text-align:right; }
   #right .mult{ display:block; font-size:1.15em; letter-spacing:2px; color:#6a6a78; margin-top:2px; transition:color 0.15s; }
+  #right .graze{ display:none; font-size:0.92em; letter-spacing:2px; color:var(--gold); margin-top:3px; }
+  #right .graze.on{ display:block; }
+  #right .graze.pop{ animation:grazepop 0.22s ease-out; }
+  @keyframes grazepop{ 0%{ transform:scale(1.5); filter:brightness(1.7);} 100%{ transform:scale(1); filter:brightness(1);} }
   #lives{ display:flex; gap:7px; margin-top:5px; justify-content:flex-end; }
   .life{ width:16px; height:16px; }
 
   /* warning vignette */
   #vignette{ position:fixed; inset:0; z-index:7; pointer-events:none; opacity:0;
              box-shadow:inset 0 0 140px 40px rgba(255,40,40,0.75); transition:opacity 0.08s linear; }
+  #grazeflash{ position:fixed; inset:0; z-index:6; pointer-events:none; opacity:0;
+               box-shadow:inset 0 0 120px 30px rgba(201,162,39,0.5); transition:opacity 0.3s ease-out; }
 
   /* Game over */
   #gameover{ background:rgba(0,0,0,0.82); }
@@ -60,6 +66,11 @@
   .goscore{ margin-top:22px; font-size:clamp(16px,4vw,24px); letter-spacing:2px; }
   .goscore b{ color:var(--gold); font-size:1.4em; }
   .gobest{ margin-top:8px; color:#9a9aa8; letter-spacing:2px; }
+  #newbest{ margin-top:14px; color:var(--gold); font-family:"Anton","Arial Black",sans-serif;
+            font-size:clamp(18px,5vw,30px); letter-spacing:4px;
+            filter:drop-shadow(0 0 12px rgba(201,162,39,0.6));
+            animation:nbpulse 0.7s ease-in-out infinite alternate; }
+  @keyframes nbpulse{ from{ transform:scale(1); opacity:0.8;} to{ transform:scale(1.08); opacity:1;} }
   .again{ margin-top:34px; font-size:clamp(14px,3.6vw,20px); letter-spacing:3px; color:#fff; animation:blink 1.15s steps(1) infinite; }
 
   /* orientation nag */
@@ -101,10 +112,12 @@
   <div id="right" class="block">
     <span class="label">SCORE</span><span class="val" id="scoreVal">0</span>
     <span class="mult" id="multVal">×1.0</span>
+    <span class="graze" id="grazeVal"></span>
     <div id="lives"></div>
   </div>
 </div>
 <div id="vignette"></div>
+<div id="grazeflash"></div>
 
 <div id="splash" class="overlay">
   <img class="logo-img" src="logo.png" alt="EVENT HORIZON">
@@ -115,6 +128,7 @@
 
 <div id="gameover" class="overlay hidden">
   <h2>Consumed</h2>
+  <div id="newbest" class="hidden">★ NEW BEST ★</div>
   <div class="goscore">SCORE <b id="goScore">0</b></div>
   <div class="gobest">BEST <span id="goBest">0</span></div>
   <div class="again">▶ PRESS ANY KEY / TAP TO RETRY</div>
@@ -129,13 +143,22 @@
 <div id="recal" class="hidden" title="Recenter tilt">◎</div>
 <div id="tunerBtn" class="hidden">⚙</div>
 <div id="tuner" class="hidden"></div>
-<div id="banner" class="hidden">prototype build · v0.3.5</div>
+<div id="banner" class="hidden">prototype build · v0.3.6</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 "use strict";
 /* ============================================================
-   EVENT HORIZON — three.js prototype (v0.3.5)
+   EVENT HORIZON — three.js prototype (v0.3.6)
+   v0.3.6 changes:
+     - graze streak: hugging the tight inner band (d < grazeZone)
+       builds a combo that pays escalating bonus points; pulling out
+       past grazeRelease breaks it. rewards sustained nerve, a
+       different skill than raw SCORE accumulation
+     - juice: gold screen flash + rising ping + short haptic on each
+       graze tick, plus a GRAZE xN combo readout in the HUD
+     - NEW BEST badge + celebratory haptic on the game-over screen
+       when you beat your stored best; haptic buzz on losing a life
    v0.3.5 changes:
      - one trophy number: TIME removed from the HUD entirely, only
        SCORE remains. SCORE already contained time as the risk-
@@ -192,6 +215,12 @@ var CONFIG = {
   scoreBase:     10,      // points per second at a safe distance
   bonusZone:     8.0,     // within this many units above the horizon, bonus ramps
   bonusMax:      7.0,     // hugging the horizon => up to 1 + bonusMax multiplier
+  // ---- graze streak (v0.3.6) ----
+  grazeZone:     2.6,      // within this many units above the horizon => a graze
+  grazeRelease:  4.2,      // pull out past this to break the streak (hysteresis)
+  grazeTick:     0.42,     // seconds of continuous grazing per streak increment
+  grazeBonus:    45,       // base bonus points per streak tick (grows with streak)
+  grazeCap:      12,       // streak count where the per-tick bonus stops growing
   // ---- layered events (v0.3) ----
   debrisInterval:5.5,     // seconds between debris spawns (lower = busier)
   debrisIntMin:  2.2,     // spawn-interval floor as the run speeds up
@@ -209,7 +238,9 @@ var TUNE = [
   { k:"horizonGrow",    label:"Horizon grow",  min:0,  max:0.3,  step:0.005,  dp:3 },
   { k:"arenaShrink",    label:"Wall close",    min:0,  max:0.4,  step:0.005,  dp:3 },
   { k:"debrisInterval", label:"Debris rate",   min:2,  max:12,   step:0.5,    dp:1 },
-  { k:"thrust",         label:"Thrust",        min:40, max:90,   step:1,      dp:0 }
+  { k:"thrust",         label:"Thrust",        min:40, max:90,   step:1,      dp:0 },
+  { k:"grazeZone",      label:"Graze band",    min:1,  max:6,    step:0.1,    dp:1 },
+  { k:"grazeTick",      label:"Graze pace",    min:0.2,max:1.0,  step:0.02,   dp:2 }
 ];
 
 // ---------- state ----------
@@ -223,7 +254,8 @@ var game = {
   time:0, score:0, best:0, lives:CONFIG.lives, mult:1,
   posX:0, posZ:0, velX:0, velZ:0,
   gravMul:1, horizon:CONFIG.horizonRadius, arena:CONFIG.arenaR,
-  invulnT:0, heading:0, shake:0
+  invulnT:0, heading:0, shake:0,
+  graze:0, grazeT:0, grazeOn:false, bestGraze:0
 };
 
 // ---------- layered events ----------
@@ -437,6 +469,7 @@ function buildPulse(){
 // ============================================================
 function startGame(){
   game.time=0; game.score=0; game.mult=1; game.lives=CONFIG.lives;
+  game.graze=0; game.grazeT=0; game.grazeOn=false; game.bestGraze=0;
   game.gravMul=1; game.horizon=CONFIG.horizonRadius; game.arena=CONFIG.arenaR; game.shake=0;
   clearEvents();
   resetShip(true);
@@ -476,6 +509,7 @@ function loseLife(){
   sfxDeath();
   flashVignette();
   game.shake = 0.6;
+  vibrate([50,60,50]);
   buildLivesUI();
   if(game.lives<=0){ gameOver(); }
   else { resetShip(false); }
@@ -485,10 +519,13 @@ function gameOver(){
   state = STATE.OVER;
   clearEvents();
   var sc = Math.floor(game.score);
+  var isBest = sc>0 && sc>game.best;
   game.best = Math.max(game.best, sc);
   saveBest();
   document.getElementById("goScore").textContent = sc;
   document.getElementById("goBest").textContent = game.best;
+  document.getElementById("newbest").classList.toggle("hidden", !isBest);
+  if(isBest) vibrate([20,50,20,50,20]);
   document.getElementById("gameover").classList.remove("hidden");
   document.getElementById("hud").classList.add("hidden");
   document.getElementById("recal").classList.add("hidden");
@@ -556,6 +593,22 @@ function update(dt){
   game.mult = 1 + CONFIG.bonusMax*prox;
   game.score += dt * CONFIG.scoreBase * game.mult;
 
+  // ---- graze streak: sustained hugging of the inner band builds a combo ----
+  if(game.invulnT<=0 && d < CONFIG.grazeZone){
+    game.grazeOn = true;
+    game.grazeT += dt;
+    while(game.grazeT >= CONFIG.grazeTick){
+      game.grazeT -= CONFIG.grazeTick;
+      game.graze++;
+      if(game.graze > game.bestGraze) game.bestGraze = game.graze;
+      var gstep = Math.min(game.graze, CONFIG.grazeCap);
+      game.score += CONFIG.grazeBonus * gstep;
+      onGraze(gstep);
+    }
+  } else if(d > CONFIG.grazeRelease && game.grazeOn){
+    game.grazeOn = false; game.graze = 0; game.grazeT = 0;
+  }
+
   // ---- warning feedback ----
   var warn = 0;
   if(d < CONFIG.warnRadius){ warn = 1 - (d/CONFIG.warnRadius); warn=Math.max(0,Math.min(1,warn)); }
@@ -585,6 +638,7 @@ function update(dt){
   var mv = document.getElementById("multVal");
   mv.textContent = "×"+game.mult.toFixed(1);
   mv.style.color = game.mult>3 ? "#ff9d3c" : (game.mult>1.6 ? "#ffd166" : "#6a6a78");
+  if(!(game.grazeOn && game.graze>0)) document.getElementById("grazeVal").classList.remove("on");
 }
 
 function updateTrail(){
@@ -926,6 +980,21 @@ function sfxDeath(){
   o.type="sawtooth"; o.frequency.setValueAtTime(320,now); o.frequency.exponentialRampToValueAtTime(40,now+0.7);
   g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.75);
   o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+0.8);
+}
+function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+function popEl(el){ if(!el) return; el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
+function sfxGraze(step){
+  if(!audio.ctx||audio.muted) return;
+  beep(620 + Math.min(step,12)*55, 0.07, "triangle", 0.13);
+}
+function onGraze(step){
+  var gv=document.getElementById("grazeVal");
+  if(gv){ gv.textContent="GRAZE ×"+game.graze; gv.classList.add("on"); popEl(gv); }
+  var gf=document.getElementById("grazeflash");
+  if(gf){ gf.style.opacity=Math.min(0.4,0.14+step*0.02).toFixed(2);
+          requestAnimationFrame(function(){ gf.style.opacity="0"; }); }
+  sfxGraze(step);
+  vibrate(10);
 }
 function sfxPulse(){
   if(!audio.ctx||audio.muted) return;
