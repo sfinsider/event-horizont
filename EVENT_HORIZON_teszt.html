@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EVENT HORIZON</title>
+<style>
+  :root{ --gold:#C9A227; --hot:#ffd9a0; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#000; }
+  body{ font-family:"Share Tech Mono", ui-monospace, "Courier New", monospace; color:#eee; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  #app{ position:fixed; inset:0; }
+  canvas{ display:block; }
+
+  .overlay{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; z-index:10; padding:24px; }
+  .hidden{ display:none !important; }
+
+  /* Splash */
+  #splash{ background:radial-gradient(ellipse at center, rgba(20,10,30,0.55) 0%, rgba(0,0,0,0.9) 70%); }
+  .logo{ font-family:"Anton","Arial Black",sans-serif; font-weight:900; letter-spacing:2px; line-height:0.92;
+         font-size:clamp(44px, 12vw, 132px); text-transform:uppercase;
+         background:linear-gradient(180deg,#fff 0%, var(--hot) 45%, var(--gold) 100%);
+         -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+         filter:drop-shadow(0 0 22px rgba(201,162,39,0.45)); }
+  .logo .l2{ display:block; }
+  .logo-img{ display:block; width:min(600px,80vw); height:auto; mix-blend-mode:screen; }
+  .tagline{ margin-top:14px; font-size:clamp(13px,3.4vw,20px); letter-spacing:6px; color:var(--gold); text-transform:uppercase; }
+  .startline{ margin-top:40px; font-size:clamp(14px,3.6vw,20px); letter-spacing:3px; color:#fff; animation:blink 1.15s steps(1) infinite; }
+  .hint{ margin-top:26px; font-size:clamp(11px,2.8vw,14px); color:#8a8a9a; line-height:1.9; letter-spacing:1px; }
+  @keyframes blink{ 50%{ opacity:0.15; } }
+
+  /* short viewports (landscape phones): keep the whole splash on screen */
+  @media (max-height:520px){
+    .overlay{ padding:12px; }
+    .logo{ font-size:clamp(32px,9vh,64px); }
+    .tagline{ margin-top:7px; letter-spacing:4px; }
+    .startline{ margin-top:15px; }
+    .hint{ margin-top:11px; line-height:1.5; }
+    .logo-img{ width:auto; height:min(230px,40vh); }
+  }
+
+  /* HUD */
+  #hud{ position:fixed; top:0; left:0; right:0; z-index:8; display:flex; justify-content:space-between; align-items:flex-start; padding:14px 18px; pointer-events:none; }
+  #hud .block{ font-size:clamp(12px,3vw,16px); letter-spacing:2px; text-shadow:0 0 8px rgba(0,0,0,0.9); }
+  #hud .label{ color:var(--gold); font-size:0.7em; letter-spacing:3px; display:block; }
+  #hud .val{ color:#fff; font-size:1.5em; }
+  #right{ text-align:right; }
+  #right .mult{ display:block; font-size:1.15em; letter-spacing:2px; color:#6a6a78; margin-top:2px; transition:color 0.15s; }
+  #right .graze{ display:none; font-size:0.92em; letter-spacing:2px; color:var(--gold); margin-top:3px; }
+  #right .graze.on{ display:block; }
+  #right .graze.pop{ animation:grazepop 0.22s ease-out; }
+  @keyframes grazepop{ 0%{ transform:scale(1.5); filter:brightness(1.7);} 100%{ transform:scale(1); filter:brightness(1);} }
+  #lives{ display:flex; gap:7px; margin-top:5px; justify-content:flex-end; }
+  .life{ width:16px; height:16px; }
+
+  /* warning vignette */
+  #vignette{ position:fixed; inset:0; z-index:7; pointer-events:none; opacity:0;
+             box-shadow:inset 0 0 140px 40px rgba(255,40,40,0.75); transition:opacity 0.08s linear; }
+  #grazeflash{ position:fixed; inset:0; z-index:6; pointer-events:none; opacity:0;
+               box-shadow:inset 0 0 120px 30px rgba(201,162,39,0.5); transition:opacity 0.3s ease-out; }
+
+  /* Game over */
+  #gameover{ background:rgba(0,0,0,0.82); }
+  #gameover h2{ font-family:"Anton","Arial Black",sans-serif; font-size:clamp(38px,10vw,90px); letter-spacing:3px;
+                color:#ff5252; text-transform:uppercase; filter:drop-shadow(0 0 16px rgba(255,60,60,0.5)); }
+  .goscore{ margin-top:22px; font-size:clamp(16px,4vw,24px); letter-spacing:2px; }
+  .goscore b{ color:var(--gold); font-size:1.4em; }
+  .gobest{ margin-top:8px; color:#9a9aa8; letter-spacing:2px; }
+  #newbest{ margin-top:14px; color:var(--gold); font-family:"Anton","Arial Black",sans-serif;
+            font-size:clamp(18px,5vw,30px); letter-spacing:4px;
+            filter:drop-shadow(0 0 12px rgba(201,162,39,0.6));
+            animation:nbpulse 0.7s ease-in-out infinite alternate; }
+  @keyframes nbpulse{ from{ transform:scale(1); opacity:0.8;} to{ transform:scale(1.08); opacity:1;} }
+  .again{ margin-top:34px; font-size:clamp(14px,3.6vw,20px); letter-spacing:3px; color:#fff; animation:blink 1.15s steps(1) infinite; }
+
+  /* orientation nag */
+  #rotate{ background:#000; z-index:20; }
+  #rotate .ico{ font-size:60px; animation:spin 2.4s ease-in-out infinite; }
+  @keyframes spin{ 0%,100%{ transform:rotate(0deg);} 50%{ transform:rotate(90deg);} }
+
+  /* mute button */
+  #mute{ position:fixed; bottom:14px; right:16px; z-index:9; width:44px; height:44px; border-radius:50%;
+         border:1px solid rgba(201,162,39,0.5); background:rgba(0,0,0,0.45); color:var(--gold);
+         font-size:19px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  #banner{ position:fixed; bottom:16px; left:0; right:0; z-index:8; text-align:center; font-size:11px; letter-spacing:2px; color:#6a6a78; pointer-events:none; }
+
+  /* tuning panel */
+  #tunerBtn{ position:fixed; bottom:14px; left:16px; z-index:9; width:44px; height:44px; border-radius:50%;
+             border:1px solid rgba(201,162,39,0.5); background:rgba(0,0,0,0.45); color:var(--gold);
+             font-size:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  #tuner{ position:fixed; bottom:66px; left:12px; z-index:11; width:min(300px,86vw);
+          background:rgba(8,8,12,0.93); border:1px solid rgba(201,162,39,0.35); border-radius:12px;
+          padding:14px 14px 10px; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+  #tuner .trow{ display:flex; align-items:center; gap:8px; margin:8px 0; font-size:11px; letter-spacing:1px; }
+  #tuner label{ color:var(--gold); flex:0 0 90px; text-transform:uppercase; }
+  #tuner input[type=range]{ flex:1; min-width:0; accent-color:var(--gold); height:20px; }
+  #tuner .tval{ flex:0 0 44px; text-align:right; color:#fff; font-variant-numeric:tabular-nums; }
+  #tuner .tnote{ margin-top:9px; font-size:9px; letter-spacing:1px; color:#6a6a78; text-align:center; }
+
+  /* recalibrate (gyro recenter) button */
+  #recal{ position:fixed; bottom:66px; right:16px; z-index:9; width:44px; height:44px; border-radius:50%;
+          border:1px solid rgba(201,162,39,0.5); background:rgba(0,0,0,0.45); color:var(--gold);
+          font-size:21px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+          transition:background 0.15s, color 0.15s, transform 0.15s; }
+  #recal.ok{ background:rgba(201,162,39,0.9); color:#000; transform:scale(1.12); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud" class="hidden">
+  <div id="right" class="block">
+    <span class="label">SCORE</span><span class="val" id="scoreVal">0</span>
+    <span class="mult" id="multVal">×1.0</span>
+    <span class="graze" id="grazeVal"></span>
+    <div id="lives"></div>
+  </div>
+</div>
+<div id="vignette"></div>
+<div id="grazeflash"></div>
+
+<div id="splash" class="overlay">
+  <img class="logo-img" src="logo.png" alt="EVENT HORIZON">
+  <div class="tagline">Tilt to survive</div>
+  <div class="startline" id="startLine">▶ PRESS ANY KEY / TAP TO START</div>
+  <div class="hint" id="startHint"></div>
+</div>
+
+<div id="gameover" class="overlay hidden">
+  <h2>Consumed</h2>
+  <div id="newbest" class="hidden">★ NEW BEST ★</div>
+  <div class="goscore">SCORE <b id="goScore">0</b></div>
+  <div class="gobest">BEST <span id="goBest">0</span></div>
+  <div class="again">▶ PRESS ANY KEY / TAP TO RETRY</div>
+</div>
+
+<div id="rotate" class="overlay hidden">
+  <div class="ico">▭</div>
+  <div style="margin-top:20px; letter-spacing:3px;">ROTATE TO LANDSCAPE</div>
+</div>
+
+<div id="mute" class="hidden">🔇</div>
+<div id="recal" class="hidden" title="Recenter tilt">◎</div>
+<div id="tunerBtn" class="hidden">⚙</div>
+<div id="tuner" class="hidden"></div>
+<div id="banner" class="hidden">prototype build · v0.3.6</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   EVENT HORIZON — three.js prototype (v0.3.6)
+   v0.3.6 changes:
+     - graze streak: hugging the tight inner band (d < grazeZone)
+       builds a combo that pays escalating bonus points; pulling out
+       past grazeRelease breaks it. rewards sustained nerve, a
+       different skill than raw SCORE accumulation
+     - juice: gold screen flash + rising ping + short haptic on each
+       graze tick, plus a GRAZE xN combo readout in the HUD
+     - NEW BEST badge + celebratory haptic on the game-over screen
+       when you beat your stored best; haptic buzz on losing a life
+   v0.3.5 changes:
+     - one trophy number: TIME removed from the HUD entirely, only
+       SCORE remains. SCORE already contained time as the risk-
+       weighted time integral, and two equal metrics could even rank
+       runs in contradictory order (safe-long vs brave-short).
+       game.time still drives difficulty, it just isn't displayed.
+     - gear/tuning button hidden by default (append ?tune to the URL
+       to bring it back)
+     - landscape gyro fix: the tilt vector is rotated by
+       screen.orientation.angle so steering no longer comes out turned
+       90 degrees (or reversed) when the phone is held sideways
+   v0.3.4 changes:
+     - image logo (logo.png) replaces the CSS text wordmark on the
+       splash, composited with mix-blend-mode:screen so the black
+       backdrop drops out and the live black hole shows through
+   v0.3.3 changes:
+     - splash fits on landscape phones: a max-height media query
+       shrinks the logo + tightens spacing so the hint no longer
+       clips off the bottom; shorter hint copy (<=~52 chars/line)
+   v0.3.2 changes:
+     - recenter/recalibrate button (◎) for the gyro: taps set
+       the current phone pose as neutral on BOTH axes (beta+gamma),
+       so drift from shifting your grip is fixable mid-run
+   v0.3 changes:
+     - accelerating suction (quadratic gravity ramp) so the
+       early game stops being a free ride
+     - layered events vs. monotony: inward-drifting debris to
+       dodge + a telegraphed gravity shockwave that knocks you
+       off course
+     - on-screen tuning panel (gear button) for live tuning on
+       a phone, no file reupload needed
+   Tune everything in CONFIG below or live via the gear panel.
+   ============================================================ */
+
+var CONFIG = {
+  horizonRadius: 3.6,     // event horizon (death radius) at start
+  horizonGrow:   0.12,    // world units the horizon grows per second
+  diskInner:     4.2,
+  diskOuter:     17.0,
+  arenaR:        27.0,    // starting outer wall (safe boundary)
+  arenaShrink:   0.265,   // units/sec the wall closes in (tuned 2026-07-18)
+  arenaMin:      12.5,    // wall floor
+  shipRadius:    1.0,
+  gravBase:      150.0,   // pull strength (1/r model — reaches the edge)
+  gravRamp:      0.06,    // linear pull-multiplier growth per second
+  gravAccel:     0.0064,  // quadratic term: suction accelerates over time (tuned 2026-07-18)
+  gravMinR:      3.2,     // clamp so pull near centre stays finite
+  thrust:        62.0,    // player acceleration
+  damping:       0.992,   // velocity retention per frame (60fps ref)
+  lives:         3,
+  invuln:        1.6,     // seconds of blink after respawn
+  warnRadius:    8.0,     // red warning starts inside this band above horizon
+  // ---- risk / reward scoring ----
+  scoreBase:     10,      // points per second at a safe distance
+  bonusZone:     8.0,     // within this many units above the horizon, bonus ramps
+  bonusMax:      7.0,     // hugging the horizon => up to 1 + bonusMax multiplier
+  // ---- graze streak (v0.3.6) ----
+  grazeZone:     2.6,      // within this many units above the horizon => a graze
+  grazeRelease:  4.2,      // pull out past this to break the streak (hysteresis)
+  grazeTick:     0.42,     // seconds of continuous grazing per streak increment
+  grazeBonus:    45,       // base bonus points per streak tick (grows with streak)
+  grazeCap:      12,       // streak count where the per-tick bonus stops growing
+  // ---- layered events (v0.3) ----
+  debrisInterval:5.5,     // seconds between debris spawns (lower = busier)
+  debrisIntMin:  2.2,     // spawn-interval floor as the run speeds up
+  debrisSpeed:   7.0,     // initial inward drift speed of a chunk
+  debrisRadius:  0.9,     // base collision size of a chunk
+  pulseInterval: 17.0,    // seconds between gravity shockwaves
+  pulseSpeed:    26.0,    // shockwave ring expansion speed (units/sec)
+  pulseKick:     24.0     // velocity impulse when the wave hits the ship
+};
+
+// keys exposed on the on-screen tuning panel
+var TUNE = [
+  { k:"gravRamp",       label:"Suction ramp",  min:0,  max:0.2,  step:0.005,  dp:3 },
+  { k:"gravAccel",      label:"Suction accel", min:0,  max:0.01, step:0.0002, dp:4 },
+  { k:"horizonGrow",    label:"Horizon grow",  min:0,  max:0.3,  step:0.005,  dp:3 },
+  { k:"arenaShrink",    label:"Wall close",    min:0,  max:0.4,  step:0.005,  dp:3 },
+  { k:"debrisInterval", label:"Debris rate",   min:2,  max:12,   step:0.5,    dp:1 },
+  { k:"thrust",         label:"Thrust",        min:40, max:90,   step:1,      dp:0 },
+  { k:"grazeZone",      label:"Graze band",    min:1,  max:6,    step:0.1,    dp:1 },
+  { k:"grazeTick",      label:"Graze pace",    min:0.2,max:1.0,  step:0.02,   dp:2 }
+];
+
+// ---------- state ----------
+var STATE = { BOOT:0, SPLASH:1, PLAY:2, OVER:3 };
+var state = STATE.BOOT;
+var renderer, scene, camera, clock;
+var blackhole, photonRing, disk, glow, arenaRing, ship, shipTrail, stars, explosion;
+var W = window.innerWidth, H = window.innerHeight;
+
+var game = {
+  time:0, score:0, best:0, lives:CONFIG.lives, mult:1,
+  posX:0, posZ:0, velX:0, velZ:0,
+  gravMul:1, horizon:CONFIG.horizonRadius, arena:CONFIG.arenaR,
+  invulnT:0, heading:0, shake:0,
+  graze:0, grazeT:0, grazeOn:false, bestGraze:0
+};
+
+// ---------- layered events ----------
+var debris = [];
+var DEBRIS_N = 14;
+var debrisT = 0;
+var pulse = { active:false, r:0, hit:false, mesh:null };
+var pulseT = 0;
+
+// ---------- input ----------
+var keys = {};
+var gyro = { enabled:false, has:false, neutralBeta:null, neutralGamma:null, x:0, z:0 };
+var pointer = { active:false, x:0, z:0 };
+
+// ---------- audio ----------
+var audio = { ctx:null, muted:true, master:null, music:null, thrustOsc:null, thrustGain:null };
+var MUSIC_FILE = "music.ogg"; // drop a Suno-generated track next to this file
+
+// ============================================================
+//  INIT
+// ============================================================
+function init(){
+  renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:"high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setSize(W,H);
+  document.getElementById("app").appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x05040a, 0.012);
+
+  camera = new THREE.PerspectiveCamera(55, W/H, 0.1, 2000);
+  camera.position.set(0, 34, 27);
+  camera.lookAt(0,0,0);
+
+  scene.add(new THREE.AmbientLight(0x334455, 0.7));
+  var key = new THREE.PointLight(0xffbb66, 1.2, 200); key.position.set(0,40,20); scene.add(key);
+
+  buildStars();
+  buildBlackHole();
+  buildShip();
+  buildExplosion();
+  buildDebris();
+  buildPulse();
+
+  clock = new THREE.Clock();
+  bindEvents();
+  buildLivesUI();
+  buildTuner();
+  loadBest();
+
+  var touch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  document.getElementById("startHint").innerHTML = touch
+    ? "Tilt to steer · ◎ recenters · no tilt? hold a finger<br>Hug the horizon for a higher score · landscape"
+    : "Arrow keys / WASD to steer · M to mute<br>Hug the horizon for a higher score";
+
+  state = STATE.SPLASH;
+  document.getElementById("banner").classList.remove("hidden");
+  document.getElementById("mute").classList.remove("hidden");
+  if(/[?&#](tune|debug)/.test(location.href)) document.getElementById("tunerBtn").classList.remove("hidden");
+  checkOrientation();
+  animate();
+}
+
+// ============================================================
+//  BUILD — visuals
+// ============================================================
+function buildStars(){
+  var g = new THREE.BufferGeometry();
+  var n = 1600, arr = new Float32Array(n*3);
+  for(var i=0;i<n;i++){
+    var r = 200 + Math.random()*600;
+    var t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1);
+    arr[i*3]   = r*Math.sin(p)*Math.cos(t);
+    arr[i*3+1] = r*Math.cos(p)*0.5 - 40;
+    arr[i*3+2] = r*Math.sin(p)*Math.sin(t);
+  }
+  g.setAttribute("position", new THREE.BufferAttribute(arr,3));
+  var m = new THREE.PointsMaterial({ color:0xafc4ff, size:1.4, sizeAttenuation:true, transparent:true, opacity:0.85 });
+  stars = new THREE.Points(g,m); scene.add(stars);
+}
+
+function buildBlackHole(){
+  // event horizon sphere (pure black)
+  blackhole = new THREE.Mesh(
+    new THREE.SphereGeometry(CONFIG.horizonRadius, 48, 48),
+    new THREE.MeshBasicMaterial({ color:0x000000 })
+  );
+  scene.add(blackhole);
+
+  // photon ring — thin bright ring hugging the horizon
+  photonRing = new THREE.Mesh(
+    new THREE.TorusGeometry(CONFIG.horizonRadius*1.06, 0.14, 16, 90),
+    new THREE.MeshBasicMaterial({ color:0xfff0d0, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending })
+  );
+  photonRing.rotation.x = Math.PI/2;
+  scene.add(photonRing);
+
+  // soft glow behind the hole
+  glow = new THREE.Mesh(
+    new THREE.CircleGeometry(CONFIG.horizonRadius*2.4, 48),
+    new THREE.MeshBasicMaterial({ color:0x66330f, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending })
+  );
+  glow.rotation.x = -Math.PI/2; glow.position.y = -0.05;
+  scene.add(glow);
+
+  // closing wall — faint ring marking the shrinking safe boundary
+  arenaRing = new THREE.Mesh(
+    new THREE.TorusGeometry(CONFIG.arenaR, 0.13, 12, 128),
+    new THREE.MeshBasicMaterial({ color:0x3a6aa0, transparent:true, opacity:0.4, blending:THREE.AdditiveBlending })
+  );
+  arenaRing.rotation.x = Math.PI/2;
+  scene.add(arenaRing);
+
+  // accretion disk — custom swirl shader on a flat plane in the XZ plane
+  var size = CONFIG.diskOuter*2;
+  var geo = new THREE.PlaneGeometry(size, size, 1, 1);
+  var mat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+    uniforms:{
+      uTime:{value:0}, uPlane:{value:size},
+      uInner:{value:CONFIG.diskInner}, uOuter:{value:CONFIG.diskOuter}, uSpin:{value:1.0}
+    },
+    vertexShader:[
+      "varying vec2 vUv;",
+      "void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }"
+    ].join("\n"),
+    fragmentShader:[
+      "precision highp float;",
+      "varying vec2 vUv;",
+      "uniform float uTime,uPlane,uInner,uOuter,uSpin;",
+      "void main(){",
+      "  vec2 p=(vUv-0.5)*uPlane;",
+      "  float r=length(p);",
+      "  if(r<uInner || r>uOuter){ discard; }",
+      "  float a=atan(p.y,p.x);",
+      "  float t=(r-uInner)/(uOuter-uInner);",
+      "  float swirl=sin(a*3.0 + uTime*uSpin*2.2 - r*0.9);",
+      "  float arms=0.55+0.45*swirl;",
+      "  float fall=pow(1.0-t,1.7);",
+      "  float edge=smoothstep(0.0,0.12,t)*smoothstep(1.0,0.82,t);",
+      "  float bright=fall*edge*(0.5+0.6*arms);",
+      "  vec3 hot=vec3(1.0,0.95,0.85);",
+      "  vec3 mid=vec3(1.0,0.55,0.15);",
+      "  vec3 cold=vec3(0.55,0.15,0.45);",
+      "  vec3 col=mix(hot,mid,smoothstep(0.0,0.4,t));",
+      "  col=mix(col,cold,smoothstep(0.45,1.0,t));",
+      "  gl_FragColor=vec4(col*bright*1.6, bright);",
+      "}"
+    ].join("\n")
+  });
+  disk = new THREE.Mesh(geo, mat);
+  disk.rotation.x = -Math.PI/2; // lay flat in XZ
+  scene.add(disk);
+}
+
+function buildShip(){
+  ship = new THREE.Group();
+  var body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.85, 2.4, 10),
+    new THREE.MeshStandardMaterial({ color:0xdfe8ff, emissive:0x2a3a66, metalness:0.6, roughness:0.35 })
+  );
+  body.rotation.x = Math.PI/2; // nose along +Z
+  ship.add(body);
+  var th = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 12, 12),
+    new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending })
+  );
+  th.position.z = -1.5; ship.name="ship"; ship.userData.thruster = th; ship.add(th);
+  var light = new THREE.PointLight(0x66ccff, 0.8, 18); light.position.z=-1.5; ship.add(light);
+  ship.position.y = 0.5;
+  scene.add(ship);
+
+  var tg = new THREE.BufferGeometry();
+  var TN = 26; tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(TN*3),3));
+  shipTrail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending }));
+  shipTrail.userData = { n:TN, pts:[] };
+  scene.add(shipTrail);
+}
+
+function buildExplosion(){
+  var n=90, g=new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n*3),3));
+  explosion = new THREE.Points(g, new THREE.PointsMaterial({ color:0xffaa55, size:0.9, transparent:true, opacity:0, blending:THREE.AdditiveBlending }));
+  explosion.userData = { n:n, vel:new Float32Array(n*3), t:0, active:false };
+  scene.add(explosion);
+}
+
+function buildDebris(){
+  var geo = new THREE.IcosahedronGeometry(1, 0); // shared low-poly rock
+  for(var i=0;i<DEBRIS_N;i++){
+    var m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color:0x9a8c7a, emissive:0x180d05, metalness:0.25, roughness:0.9, flatShading:true
+    }));
+    m.visible = false; scene.add(m);
+    debris.push({ mesh:m, active:false, x:0, z:0, vx:0, vz:0, rad:CONFIG.debrisRadius, sx:0, sy:0, sz:0 });
+  }
+}
+
+function buildPulse(){
+  pulse.mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(1, 0.16, 10, 100),
+    new THREE.MeshBasicMaterial({ color:0x8fbaff, transparent:true, opacity:0, blending:THREE.AdditiveBlending })
+  );
+  pulse.mesh.rotation.x = Math.PI/2;
+  pulse.mesh.visible = false;
+  scene.add(pulse.mesh);
+}
+
+// ============================================================
+//  GAME FLOW
+// ============================================================
+function startGame(){
+  game.time=0; game.score=0; game.mult=1; game.lives=CONFIG.lives;
+  game.graze=0; game.grazeT=0; game.grazeOn=false; game.bestGraze=0;
+  game.gravMul=1; game.horizon=CONFIG.horizonRadius; game.arena=CONFIG.arenaR; game.shake=0;
+  clearEvents();
+  resetShip(true);
+  buildLivesUI();
+  document.getElementById("hud").classList.remove("hidden");
+  document.getElementById("splash").classList.add("hidden");
+  document.getElementById("gameover").classList.add("hidden");
+  document.getElementById("tuner").classList.add("hidden");
+  // recenter button is only useful with the gyro, so show it on touch devices while playing
+  var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  document.getElementById("recal").classList.toggle("hidden", !isTouch);
+  state = STATE.PLAY;
+  startMusic();
+}
+
+function resetShip(full){
+  // spawn safely inside the current safe ring, with a tangential kick -> orbit
+  var ang = Math.random()*Math.PI*2;
+  var safe = Math.max(game.horizon + 4.0, (game.horizon + game.arena)*0.5);
+  var r = Math.min(game.arena*0.9, safe);
+  game.posX = Math.cos(ang)*r; game.posZ = Math.sin(ang)*r;
+  var tang = ang + Math.PI/2, speed = 10;
+  game.velX = Math.cos(tang)*speed; game.velZ = Math.sin(tang)*speed;
+  game.invulnT = CONFIG.invuln;
+  if(shipTrail) shipTrail.userData.pts = [];
+}
+
+function clearEvents(){
+  for(var i=0;i<debris.length;i++){ debris[i].active=false; debris[i].mesh.visible=false; }
+  pulse.active=false; if(pulse.mesh) pulse.mesh.visible=false;
+  debrisT=0; pulseT=0;
+}
+
+function loseLife(){
+  game.lives--;
+  triggerExplosion();
+  sfxDeath();
+  flashVignette();
+  game.shake = 0.6;
+  vibrate([50,60,50]);
+  buildLivesUI();
+  if(game.lives<=0){ gameOver(); }
+  else { resetShip(false); }
+}
+
+function gameOver(){
+  state = STATE.OVER;
+  clearEvents();
+  var sc = Math.floor(game.score);
+  var isBest = sc>0 && sc>game.best;
+  game.best = Math.max(game.best, sc);
+  saveBest();
+  document.getElementById("goScore").textContent = sc;
+  document.getElementById("goBest").textContent = game.best;
+  document.getElementById("newbest").classList.toggle("hidden", !isBest);
+  if(isBest) vibrate([20,50,20,50,20]);
+  document.getElementById("gameover").classList.remove("hidden");
+  document.getElementById("hud").classList.add("hidden");
+  document.getElementById("recal").classList.add("hidden");
+  stopMusic(); sfxGameOver();
+}
+
+// ============================================================
+//  UPDATE
+// ============================================================
+function update(dt){
+  if(state!==STATE.PLAY){ return; }
+  dt = Math.min(dt, 0.05);
+
+  game.time += dt;
+  // accelerating suction: linear ramp + quadratic term so the edge stops being a free ride
+  game.gravMul = 1 + CONFIG.gravRamp*game.time + CONFIG.gravAccel*game.time*game.time;
+  game.horizon = CONFIG.horizonRadius + game.time*CONFIG.horizonGrow;
+  game.arena   = Math.max(CONFIG.arenaMin, CONFIG.arenaR - game.time*CONFIG.arenaShrink);
+
+  // ---- input vector ----
+  var ix=0, iz=0;
+  if(gyro.enabled && gyro.has){ ix=gyro.x; iz=gyro.z; }
+  else {
+    if(keys["ArrowLeft"]||keys["a"]) ix-=1;
+    if(keys["ArrowRight"]||keys["d"]) ix+=1;
+    if(keys["ArrowUp"]||keys["w"]) iz-=1;
+    if(keys["ArrowDown"]||keys["s"]) iz+=1;
+    if(pointer.active){ ix+=pointer.x; iz+=pointer.z; }
+  }
+  var il = Math.hypot(ix,iz); if(il>1){ ix/=il; iz/=il; }
+
+  // ---- gravity (inward, 1/r so the edge is felt too) ----
+  var r = Math.hypot(game.posX, game.posZ) || 0.0001;
+  var rc = Math.max(r, CONFIG.gravMinR);
+  var g = (CONFIG.gravBase*game.gravMul)/rc;
+  var gx = -(game.posX/r)*g, gz = -(game.posZ/r)*g;
+
+  // ---- thrust ----
+  var tx = ix*CONFIG.thrust, tz = iz*CONFIG.thrust;
+
+  // integrate
+  game.velX += (gx+tx)*dt; game.velZ += (gz+tz)*dt;
+  var damp = Math.pow(CONFIG.damping, dt*60);
+  game.velX *= damp; game.velZ *= damp;
+  game.posX += game.velX*dt; game.posZ += game.velZ*dt;
+
+  // closing wall — push back gently at the shrinking boundary
+  var nr = Math.hypot(game.posX, game.posZ);
+  if(nr > game.arena){
+    var k=(nr-game.arena);
+    game.velX -= (game.posX/nr)*k*6*dt;
+    game.velZ -= (game.posZ/nr)*k*6*dt;
+    nr = Math.hypot(game.posX, game.posZ);
+  }
+
+  setThrust(il>0.05);
+
+  // ---- collision with horizon ----
+  if(game.invulnT>0){ game.invulnT-=dt; }
+  else if(nr < game.horizon + CONFIG.shipRadius){ loseLife(); return; }
+
+  // ---- risk / reward scoring: closer to the horizon => bigger multiplier ----
+  var d = nr - game.horizon;                                   // distance above horizon
+  var prox = Math.max(0, Math.min(1, 1 - d/CONFIG.bonusZone)); // 0 far .. 1 hugging
+  game.mult = 1 + CONFIG.bonusMax*prox;
+  game.score += dt * CONFIG.scoreBase * game.mult;
+
+  // ---- graze streak: sustained hugging of the inner band builds a combo ----
+  if(game.invulnT<=0 && d < CONFIG.grazeZone){
+    game.grazeOn = true;
+    game.grazeT += dt;
+    while(game.grazeT >= CONFIG.grazeTick){
+      game.grazeT -= CONFIG.grazeTick;
+      game.graze++;
+      if(game.graze > game.bestGraze) game.bestGraze = game.graze;
+      var gstep = Math.min(game.graze, CONFIG.grazeCap);
+      game.score += CONFIG.grazeBonus * gstep;
+      onGraze(gstep);
+    }
+  } else if(d > CONFIG.grazeRelease && game.grazeOn){
+    game.grazeOn = false; game.graze = 0; game.grazeT = 0;
+  }
+
+  // ---- warning feedback ----
+  var warn = 0;
+  if(d < CONFIG.warnRadius){ warn = 1 - (d/CONFIG.warnRadius); warn=Math.max(0,Math.min(1,warn)); }
+  document.getElementById("vignette").style.opacity = (warn*0.9).toFixed(2);
+  if(warn>0.4){ sfxWarnMaybe(); }
+
+  // ---- layered events ----
+  updateDebris(dt);
+  if(state!==STATE.PLAY){ return; } // a debris hit may have ended the run
+  updatePulse(dt);
+
+  // ---- reflect into 3D ----
+  ship.position.x = game.posX; ship.position.z = game.posZ;
+  if(Math.hypot(game.velX,game.velZ)>0.4){ game.heading = Math.atan2(game.velX, game.velZ); }
+  ship.rotation.y = game.heading;
+  ship.visible = !(game.invulnT>0 && (Math.floor(game.time*12)%2===0));
+  var th = ship.userData.thruster; if(th){ th.material.opacity = il>0.05 ? 0.95 : 0.35; }
+  updateTrail();
+
+  // grow the hole + close the wall visually
+  var hs = game.horizon/CONFIG.horizonRadius;
+  blackhole.scale.setScalar(hs); photonRing.scale.setScalar(hs); glow.scale.setScalar(hs);
+  if(arenaRing) arenaRing.scale.setScalar(game.arena/CONFIG.arenaR);
+
+  // HUD
+  document.getElementById("scoreVal").textContent = Math.floor(game.score);
+  var mv = document.getElementById("multVal");
+  mv.textContent = "×"+game.mult.toFixed(1);
+  mv.style.color = game.mult>3 ? "#ff9d3c" : (game.mult>1.6 ? "#ffd166" : "#6a6a78");
+  if(!(game.grazeOn && game.graze>0)) document.getElementById("grazeVal").classList.remove("on");
+}
+
+function updateTrail(){
+  var u = shipTrail.userData; u.pts.unshift([game.posX, 0.4, game.posZ]);
+  if(u.pts.length>u.n) u.pts.pop();
+  var pos = shipTrail.geometry.attributes.position.array;
+  for(var i=0;i<u.n;i++){
+    var p = u.pts[i] || u.pts[u.pts.length-1] || [game.posX,0.4,game.posZ];
+    pos[i*3]=p[0]; pos[i*3+1]=p[1]; pos[i*3+2]=p[2];
+  }
+  shipTrail.geometry.attributes.position.needsUpdate = true;
+}
+
+// ============================================================
+//  LAYERED EVENTS — debris + gravity pulse
+// ============================================================
+function spawnDebris(){
+  var d=null;
+  for(var i=0;i<debris.length;i++){ if(!debris[i].active){ d=debris[i]; break; } }
+  if(!d) return;
+  var ang = Math.random()*Math.PI*2;
+  var r = game.arena*0.98;
+  d.x = Math.cos(ang)*r; d.z = Math.sin(ang)*r;
+  // aim inward with a tangential swirl so it spirals rather than falling straight
+  var inward = ang + Math.PI;
+  var swirl = (Math.random()<0.5?1:-1) * (0.4+Math.random()*0.6);
+  var sp = CONFIG.debrisSpeed * (0.8+Math.random()*0.6);
+  d.vx = Math.cos(inward)*sp - Math.sin(inward)*sp*swirl*0.5;
+  d.vz = Math.sin(inward)*sp + Math.cos(inward)*sp*swirl*0.5;
+  var scl = 0.7+Math.random()*0.9;
+  d.rad = CONFIG.debrisRadius*scl;
+  d.mesh.scale.setScalar(scl);
+  d.sx=(Math.random()-0.5)*2.4; d.sy=(Math.random()-0.5)*2.4; d.sz=(Math.random()-0.5)*2.4;
+  d.active=true; d.mesh.visible=true;
+  d.mesh.position.set(d.x,0.4,d.z);
+}
+
+function updateDebris(dt){
+  // spawn cadence tightens as the run goes on
+  var interval = Math.max(CONFIG.debrisIntMin, CONFIG.debrisInterval - game.time*0.03);
+  debrisT += dt;
+  if(debrisT >= interval){
+    debrisT = 0;
+    spawnDebris();
+    if(game.time>35 && Math.random()<0.45) spawnDebris(); // occasional pair later on
+  }
+  for(var i=0;i<debris.length;i++){
+    var d=debris[i]; if(!d.active) continue;
+    var r=Math.hypot(d.x,d.z)||0.0001;
+    var rc=Math.max(r,CONFIG.gravMinR);
+    var gg=(CONFIG.gravBase*game.gravMul)/rc;
+    d.vx += -(d.x/r)*gg*dt; d.vz += -(d.z/r)*gg*dt;
+    d.x += d.vx*dt; d.z += d.vz*dt;
+    d.mesh.position.set(d.x,0.4,d.z);
+    d.mesh.rotation.x += d.sx*dt; d.mesh.rotation.y += d.sy*dt; d.mesh.rotation.z += d.sz*dt;
+    // swallowed by the horizon
+    if(r < game.horizon + d.rad*0.5){ d.active=false; d.mesh.visible=false; continue; }
+    // drifted well outside the arena
+    if(r > CONFIG.arenaR*1.5){ d.active=false; d.mesh.visible=false; continue; }
+    // collision with the ship
+    if(game.invulnT<=0){
+      var dx=d.x-game.posX, dz=d.z-game.posZ;
+      if(Math.hypot(dx,dz) < d.rad + CONFIG.shipRadius){
+        d.active=false; d.mesh.visible=false; loseLife(); return;
+      }
+    }
+  }
+}
+
+function triggerPulse(){
+  pulse.active=true; pulse.r=game.horizon+1.0; pulse.hit=false;
+  pulse.mesh.visible=true; pulse.mesh.material.opacity=0.7;
+  sfxPulse();
+}
+
+function updatePulse(dt){
+  pulseT += dt;
+  if(pulseT >= CONFIG.pulseInterval && game.time>8 && !pulse.active){ pulseT=0; triggerPulse(); }
+  if(!pulse.active) return;
+  pulse.r += CONFIG.pulseSpeed*dt;
+  pulse.mesh.scale.setScalar(pulse.r);
+  pulse.mesh.material.opacity = Math.max(0, 0.7*(1 - pulse.r/(CONFIG.arenaR*1.15)));
+  // the wave knocks the ship as it sweeps past its radius
+  var shipR = Math.hypot(game.posX, game.posZ);
+  if(!pulse.hit && pulse.r >= shipR){
+    pulse.hit=true;
+    if(game.invulnT<=0){
+      var nrm = shipR||0.0001, kick = CONFIG.pulseKick;
+      game.velX += (game.posX/nrm)*kick + (Math.random()-0.5)*kick*0.5;
+      game.velZ += (game.posZ/nrm)*kick + (Math.random()-0.5)*kick*0.5;
+      game.shake = Math.max(game.shake, 0.4);
+      flashVignette();
+    }
+  }
+  if(pulse.r > CONFIG.arenaR*1.2){ pulse.active=false; pulse.mesh.visible=false; }
+}
+
+// ---------- explosion ----------
+function triggerExplosion(){
+  var u=explosion.userData; u.active=true; u.t=0;
+  var pos=explosion.geometry.attributes.position.array;
+  for(var i=0;i<u.n;i++){
+    pos[i*3]=game.posX; pos[i*3+1]=0.5; pos[i*3+2]=game.posZ;
+    var a=Math.random()*Math.PI*2, b=Math.random()*Math.PI, s=6+Math.random()*14;
+    u.vel[i*3]=Math.cos(a)*Math.sin(b)*s; u.vel[i*3+1]=Math.cos(b)*s; u.vel[i*3+2]=Math.sin(a)*Math.sin(b)*s;
+  }
+  explosion.material.opacity=1; explosion.geometry.attributes.position.needsUpdate=true;
+}
+function updateExplosion(dt){
+  var u=explosion.userData; if(!u.active) return;
+  u.t+=dt; var pos=explosion.geometry.attributes.position.array;
+  for(var i=0;i<u.n;i++){ pos[i*3]+=u.vel[i*3]*dt; pos[i*3+1]+=u.vel[i*3+1]*dt; pos[i*3+2]+=u.vel[i*3+2]*dt; }
+  explosion.geometry.attributes.position.needsUpdate=true;
+  explosion.material.opacity=Math.max(0, 1-u.t/0.9);
+  if(u.t>0.9) u.active=false;
+}
+
+// ============================================================
+//  RENDER LOOP
+// ============================================================
+function animate(){
+  requestAnimationFrame(animate);
+  var dt = clock.getDelta();
+  var t = clock.elapsedTime;
+
+  if(disk) disk.material.uniforms.uTime.value = t;
+  if(photonRing) photonRing.rotation.z = t*0.4;
+  if(stars) stars.rotation.y = t*0.005;
+
+  update(dt);
+  updateExplosion(dt);
+
+  // camera: slow drift + brief shake on impacts
+  var sh = 0;
+  if(game.shake>0){ game.shake=Math.max(0, game.shake-dt*1.8); sh=game.shake; }
+  camera.position.x = Math.sin(t*0.15)*1.2 + (Math.random()-0.5)*sh*2.2;
+  camera.position.y = 34 + (Math.random()-0.5)*sh*2.2;
+  camera.lookAt(0,0,0);
+
+  renderer.render(scene,camera);
+}
+
+// ============================================================
+//  INPUT / EVENTS
+// ============================================================
+function isUI(e){
+  return e.target && e.target.closest && e.target.closest("#mute,#tuner,#tunerBtn,#recal");
+}
+
+function bindEvents(){
+  window.addEventListener("resize", onResize);
+  window.addEventListener("keydown", function(e){
+    keys[e.key]=true;
+    if(e.key===" "||e.key==="Spacebar") e.preventDefault();
+    if(e.key==="m"||e.key==="M"){ toggleMute(); return; }
+    handleAdvance();
+  });
+  window.addEventListener("keyup", function(e){ keys[e.key]=false; });
+
+  // Listen on window so taps on the splash / game-over overlays also register (mobile).
+  window.addEventListener("pointerdown", function(e){
+    if(isUI(e)) return;
+    pointer.active=true; setPointer(e);
+    if(state!==STATE.PLAY) handleAdvance();
+  });
+  window.addEventListener("pointermove", function(e){ if(pointer.active) setPointer(e); });
+  window.addEventListener("pointerup", function(){ pointer.active=false; pointer.x=0; pointer.z=0; });
+  window.addEventListener("touchstart", function(e){ if(isUI(e)) return; if(state!==STATE.PLAY) handleAdvance(); }, {passive:true});
+
+  document.getElementById("mute").addEventListener("click", function(e){ e.stopPropagation(); toggleMute(); });
+  document.getElementById("recal").addEventListener("click", function(e){ e.stopPropagation(); recalibrate(); });
+  document.getElementById("recal").addEventListener("pointerdown", function(e){ e.stopPropagation(); });
+  document.getElementById("tunerBtn").addEventListener("click", function(e){
+    e.stopPropagation();
+    document.getElementById("tuner").classList.toggle("hidden");
+  });
+  window.addEventListener("orientationchange", checkOrientation);
+  window.addEventListener("deviceorientation", onGyro);
+}
+
+function setPointer(e){
+  var nx=(e.clientX/W)*2-1, ny=(e.clientY/H)*2-1;
+  var l=Math.hypot(nx,ny); if(l>1){ nx/=l; ny/=l; }
+  pointer.x=nx; pointer.z=ny;
+}
+
+function handleAdvance(){
+  if(state===STATE.SPLASH){ ensureAudio(); requestGyro(); startGame(); }
+  else if(state===STATE.OVER){ startGame(); }
+}
+
+function onGyro(e){
+  if(e.gamma===null || e.beta===null) return;
+  gyro.has=true;
+  // capture "however I'm holding it now" as neutral on both axes
+  if(gyro.neutralBeta===null)  gyro.neutralBeta  = e.beta;
+  if(gyro.neutralGamma===null) gyro.neutralGamma = e.gamma;
+  var dh = (e.gamma - gyro.neutralGamma);   // device left-right tilt (portrait frame)
+  var dv = (e.beta  - gyro.neutralBeta );   // device front-back tilt (portrait frame)
+  // rotate the tilt vector into screen space so landscape steering
+  // isn't turned 90 degrees when the phone is held sideways
+  var a = ((screen.orientation && typeof screen.orientation.angle==="number")
+             ? screen.orientation.angle : (window.orientation||0)) * Math.PI/180;
+  var ca=Math.cos(a), sa=Math.sin(a);
+  var sx = ( dh*ca + dv*sa)/35;
+  var sy = (-dh*sa + dv*ca)/35;
+  gyro.x = Math.max(-1,Math.min(1,sx));
+  gyro.z = Math.max(-1,Math.min(1,sy));
+}
+
+function recalibrate(){
+  // next deviceorientation event re-captures the neutral pose on both axes
+  gyro.neutralBeta = null;
+  gyro.neutralGamma = null;
+  var b=document.getElementById("recal");
+  if(b){ b.classList.add("ok"); setTimeout(function(){ b.classList.remove("ok"); }, 280); }
+  beepOK();
+}
+
+function requestGyro(){
+  try{
+    if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
+      DeviceOrientationEvent.requestPermission().then(function(res){
+        if(res==="granted"){ gyro.enabled=true; gyro.neutralBeta=null; gyro.neutralGamma=null; }
+      }).catch(function(){});
+    } else if('ontouchstart' in window || navigator.maxTouchPoints>0){
+      gyro.enabled=true; gyro.neutralBeta=null; gyro.neutralGamma=null;
+    }
+  }catch(err){}
+}
+
+function onResize(){
+  W=window.innerWidth; H=window.innerHeight;
+  renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix();
+  checkOrientation();
+}
+
+function checkOrientation(){
+  var touch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  var portrait = H>W;
+  document.getElementById("rotate").classList.toggle("hidden", !(touch && portrait));
+}
+
+// ============================================================
+//  HUD + tuning panel helpers
+// ============================================================
+function buildLivesUI(){
+  var wrap=document.getElementById("lives"); wrap.innerHTML="";
+  for(var i=0;i<CONFIG.lives;i++){
+    var d=document.createElement("div"); d.className="life";
+    d.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2 L20 22 L12 17 L4 22 Z" fill="'+(i<game.lives?"#C9A227":"#333")+'"/></svg>';
+    wrap.appendChild(d);
+  }
+}
+
+function buildTuner(){
+  var box=document.getElementById("tuner");
+  var html="";
+  for(var i=0;i<TUNE.length;i++){
+    var t=TUNE[i];
+    html+='<div class="trow"><label>'+t.label+'</label>'
+        + '<input type="range" id="t_'+t.k+'" min="'+t.min+'" max="'+t.max+'" step="'+t.step+'">'
+        + '<span class="tval" id="v_'+t.k+'"></span></div>';
+  }
+  html+='<div class="tnote">Live tuning · changes apply instantly</div>';
+  box.innerHTML=html;
+  for(var j=0;j<TUNE.length;j++){
+    (function(t){
+      var inp=document.getElementById("t_"+t.k);
+      var out=document.getElementById("v_"+t.k);
+      inp.value=CONFIG[t.k];
+      out.textContent=Number(CONFIG[t.k]).toFixed(t.dp);
+      inp.addEventListener("input", function(){
+        CONFIG[t.k]=parseFloat(inp.value);
+        out.textContent=CONFIG[t.k].toFixed(t.dp);
+      });
+      // keep steering from firing while dragging a slider
+      inp.addEventListener("pointerdown", function(e){ e.stopPropagation(); });
+    })(TUNE[j]);
+  }
+}
+
+function flashVignette(){
+  var v=document.getElementById("vignette"); v.style.opacity="1";
+  setTimeout(function(){ v.style.opacity="0"; },140);
+}
+function loadBest(){ try{ game.best=parseInt(localStorage.getItem("eh_best")||"0",10)||0; }catch(e){} }
+function saveBest(){ try{ localStorage.setItem("eh_best", String(game.best)); }catch(e){} }
+
+// ============================================================
+//  AUDIO (Web Audio synth SFX + optional Suno music track)
+// ============================================================
+function ensureAudio(){
+  if(audio.ctx) { if(audio.ctx.state==="suspended") audio.ctx.resume(); return; }
+  try{
+    var AC = window.AudioContext||window.webkitAudioContext;
+    audio.ctx = new AC();
+    audio.master = audio.ctx.createGain();
+    audio.master.gain.value = audio.muted?0:0.9;
+    audio.master.connect(audio.ctx.destination);
+    setupThrust();
+    var el = new Audio(); el.loop=true; el.src=MUSIC_FILE; el.volume=0.55;
+    el.addEventListener("error", function(){ audio.music=null; });
+    audio.music = el;
+  }catch(e){ audio.ctx=null; }
+}
+function toggleMute(){
+  audio.muted=!audio.muted;
+  document.getElementById("mute").textContent = audio.muted?"🔇":"🔊";
+  if(audio.ctx){ audio.master.gain.value = audio.muted?0:0.9; }
+  if(audio.music){ if(audio.muted) audio.music.pause(); else if(state===STATE.PLAY) audio.music.play().catch(function(){}); }
+}
+function startMusic(){ if(audio.music && !audio.muted){ audio.music.currentTime=0; audio.music.play().catch(function(){}); } }
+function stopMusic(){ if(audio.music){ audio.music.pause(); } }
+
+function setupThrust(){
+  if(!audio.ctx) return;
+  audio.thrustGain = audio.ctx.createGain(); audio.thrustGain.gain.value=0;
+  var o=audio.ctx.createOscillator(); o.type="sawtooth"; o.frequency.value=70;
+  var f=audio.ctx.createBiquadFilter(); f.type="lowpass"; f.frequency.value=340;
+  o.connect(f); f.connect(audio.thrustGain); audio.thrustGain.connect(audio.master); o.start();
+  audio.thrustOsc=o;
+}
+function setThrust(on){
+  if(!audio.ctx||!audio.thrustGain) return;
+  var target = on?0.12:0.0;
+  audio.thrustGain.gain.setTargetAtTime(target, audio.ctx.currentTime, 0.08);
+}
+var lastWarn=0;
+function sfxWarnMaybe(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime; if(now-lastWarn<0.55) return; lastWarn=now;
+  beep(880, 0.09, "square", 0.14);
+}
+function sfxDeath(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+  o.type="sawtooth"; o.frequency.setValueAtTime(320,now); o.frequency.exponentialRampToValueAtTime(40,now+0.7);
+  g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.75);
+  o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+0.8);
+}
+function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+function popEl(el){ if(!el) return; el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
+function sfxGraze(step){
+  if(!audio.ctx||audio.muted) return;
+  beep(620 + Math.min(step,12)*55, 0.07, "triangle", 0.13);
+}
+function onGraze(step){
+  var gv=document.getElementById("grazeVal");
+  if(gv){ gv.textContent="GRAZE ×"+game.graze; gv.classList.add("on"); popEl(gv); }
+  var gf=document.getElementById("grazeflash");
+  if(gf){ gf.style.opacity=Math.min(0.4,0.14+step*0.02).toFixed(2);
+          requestAnimationFrame(function(){ gf.style.opacity="0"; }); }
+  sfxGraze(step);
+  vibrate(10);
+}
+function sfxPulse(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(150,now); o.frequency.exponentialRampToValueAtTime(48,now+0.5);
+  g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.24,now+0.05); g.gain.exponentialRampToValueAtTime(0.001,now+0.6);
+  o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+0.65);
+}
+function sfxGameOver(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  [220,165,110].forEach(function(fr,i){
+    var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+    o.type="triangle"; o.frequency.value=fr;
+    var st=now+i*0.16;
+    g.gain.setValueAtTime(0.0001,st); g.gain.linearRampToValueAtTime(0.3,st+0.03); g.gain.exponentialRampToValueAtTime(0.001,st+0.4);
+    o.connect(g); g.connect(audio.master); o.start(st); o.stop(st+0.45);
+  });
+}
+function beepOK(){
+  if(!audio.ctx||audio.muted) return;
+  var now=audio.ctx.currentTime;
+  [523,784].forEach(function(fr,i){
+    var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+    o.type="sine"; o.frequency.value=fr; var st=now+i*0.07;
+    g.gain.setValueAtTime(0.0001,st); g.gain.linearRampToValueAtTime(0.16,st+0.02); g.gain.exponentialRampToValueAtTime(0.001,st+0.18);
+    o.connect(g); g.connect(audio.master); o.start(st); o.stop(st+0.2);
+  });
+}
+function beep(fr,dur,type,vol){
+  var now=audio.ctx.currentTime;
+  var o=audio.ctx.createOscillator(), g=audio.ctx.createGain();
+  o.type=type||"sine"; o.frequency.value=fr;
+  g.gain.setValueAtTime(vol||0.2,now); g.gain.exponentialRampToValueAtTime(0.001,now+dur);
+  o.connect(g); g.connect(audio.master); o.start(now); o.stop(now+dur+0.02);
+}
+
+// ---------- go ----------
+window.addEventListener("load", init);
+</script>
+</body>
+</html>
